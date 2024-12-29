@@ -1,5 +1,6 @@
 pub mod mq;
 mod send_osc;
+mod save_png;
 mod utility;
 
 use utility::{print_err, alert, error_alert};
@@ -15,7 +16,6 @@ use std::string::String;
 use image::{self, imageops};
 use std::sync::mpsc;
 use std::default::Default;
-
 
 #[allow(unused_macros)]
 macro_rules! function {
@@ -284,7 +284,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
     let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
         let mut rgbaimage: Option<image::RgbaImage> = None;
 
-        let mut indexes_and_palette: Option<(Vec<u8>, Vec<quantizr::Color>)> = None;
+        let mut indexes_and_palette: Option<(Vec<u8>, Vec<quantizr::Color>, u32, u32)> = None;
 
         loop {
             let recvres = receiver.recv();
@@ -334,10 +334,13 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 },
                 BgMessage::SaveImage(path) => {
                     match || -> Result<(), String> {
-                        let image = rgbaimage.as_ref()
-                            .ok_or("No image loaded")?;
+                        let (indexes, palette, w, h) = indexes_and_palette.as_ref()
+                            .ok_or("No indexes or palette data")?;
 
-                        image.save(&path)
+                        let w = (*w).try_into().map_err(|err| format!("Trying to save zero width image: {err}"))?;
+                        let h = (*h).try_into().map_err(|err| format!("Trying to save zero height image: {err}"))?;
+
+                        save_png::save_png(&path, w, h, &indexes, &palette)
                             .map_err(|err| format!("Couldn't save image to {path:?}: {err}"))?;
 
                         alert(&appmsg, format!("Saved image as {path:?}"));
@@ -352,7 +355,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                         let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
-                        indexes_and_palette = None::<(Vec<u8>, Vec<quantizr::Color>)>;
+                        indexes_and_palette = None;
 
                         rgbaimage = None;
 
@@ -443,7 +446,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 palette_frame.redraw();
                             }
 
-                            indexes_and_palette = Some((indexes, palette));
+                            indexes_and_palette = Some((indexes, palette, width as u32, height as u32));
                             enable_save_and_send_osc_button(true)?;
                         } else {
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
@@ -478,7 +481,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 } => {
                     println!("SendOSC{{speed: {speed:?}, pixfmt: {pixfmt:?}}}");
                     match || -> Result<(), String> {
-                        let (indexes, palette) = indexes_and_palette.as_ref()
+                        let (indexes, palette, _w, _h) = indexes_and_palette.as_ref()
                             .ok_or("Indexes and palette not generated yet")?;
                         send_osc::send_osc(&appmsg, indexes, palette, speed)
                             .map_err(|err| format!("send_osc failed: {err}"))?;
