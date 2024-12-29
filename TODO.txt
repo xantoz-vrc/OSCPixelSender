@@ -1,3 +1,10 @@
+Replace FLTK with Iced (what COSMIC uses)?
+Other runners would be:
+Ribir (looks relatively sane),
+Slint (has it's own little DSL, but seems mostly sane)
+Relm (GTK),
+Egui (immediate mode is a minus)
+
 Consider making the appmessage sender a global variable (use oncelock
 or so) so I don't have to pass it around everywhere. That should allow
 me to make some nice wrappers around sending AppMessages as well.
