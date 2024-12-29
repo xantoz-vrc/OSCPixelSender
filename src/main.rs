@@ -242,7 +242,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut multiplier_menubutton = menu::MenuButton::default()
         .with_label("Display scale multiplier: 5x")
         .with_id("multiplier_menubutton");
-    multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x");
+    multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x\t|6x");
     multiplier_menubutton.set_value(4);
 
     row.fixed(&palette_frame, 50);
