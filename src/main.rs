@@ -814,14 +814,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let mut wind = Window::default().with_size(width, height);
                     wind.set_label(&title);
                     let res = f(&mut wind);
-                    wind.end();
-                    wind.show();
                     if let Err(err) = res {
                         let msg = format!("CreateWindow error: {err}");
                         eprintln!("{}", msg);
                         dialog::alert_default(&msg);
                         // Something failed, delete the window
                         Window::delete(wind);
+                    } else {
+                        wind.end();
+                        wind.show();
                     }
                 },
                 AppMessage::DeleteWindow(mut window) => {
