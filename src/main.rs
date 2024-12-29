@@ -269,29 +269,22 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                 progressbar.set_maximum(100.0);
                 progressbar.set_value(0.0);
 
-                let cancel_cb = {
-                    let cancel_flag = Arc::clone(&cancel_flag);
-                    move || {
-                        cancel_flag.store(true, Ordering::Relaxed);
-                    }
-                };
-
                 win.set_callback({
-                    let cancel_cb = cancel_cb.clone();
+                    let cancel_flag = Arc::clone(&cancel_flag);
                     move |_win| {
                         if app::event() == Event::Close {
                             println!("Send OSC window got Event::close");
-                            cancel_cb();
+                            cancel_flag.store(true, Ordering::Relaxed);
                         }
                     }
                 });
 
                 let mut cancel_btn = Button::default().with_label("Cancel");
                 cancel_btn.set_callback({
-                    let cancel_cb = cancel_cb.clone();
+                    let cancel_flag = Arc::clone(&cancel_flag);
                     move |_btn| {
                         println!("Send OSC window cancel button pressed");
-                        cancel_cb();
+                        cancel_flag.store(true, Ordering::Relaxed);
                     }
                 });
 
