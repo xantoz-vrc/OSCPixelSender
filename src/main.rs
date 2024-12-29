@@ -239,7 +239,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    fn clearimage() {
+    fn clearimage() -> () {
         match || -> Result<(), String> {
             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
 
@@ -261,7 +261,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    fn loadimage() {
+    fn loadimage() -> () {
         println!("loadimage called");
 
         thread::spawn(|| {
