@@ -384,7 +384,7 @@ pub fn send_osc(
 
     let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg, misc_string)?;
 
-    let palette = palette.to_owned();
+    let palette = palette.to_owned(); // Clone the palette for the thread to own it
     let appmsg = appmsg.clone();
     thread::spawn(move || -> () {
 
