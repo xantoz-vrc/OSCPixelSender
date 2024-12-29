@@ -328,6 +328,12 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
         match || -> Result<(), Box<dyn Error>> {
             let duration = Duration::from_secs_f64(sleep_time);
 
+            msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/CLK"),
+                args: vec![OscType::Bool(false)],
+            }))?;
+            sock.send_to(&msg_buf, to_addr)?;
+
             let mut msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                 addr: format!("{OSC_PREFIX}/Reset"),
                 args: vec![OscType::Bool(true)],
@@ -337,13 +343,13 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
             thread::sleep(duration);
 
             msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/Reset"),
+                addr: format!("{OSC_PREFIX}/CLK"),
                 args: vec![OscType::Bool(false)],
             }))?;
             sock.send_to(&msg_buf, to_addr)?;
 
             msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
+                addr: format!("{OSC_PREFIX}/Reset"),
                 args: vec![OscType::Bool(false)],
             }))?;
             sock.send_to(&msg_buf, to_addr)?;
