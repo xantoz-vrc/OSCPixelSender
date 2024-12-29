@@ -10,6 +10,7 @@ use std::thread;
 use std::panic;
 use std::string::String;
 use image::{self, imageops};
+use std::sync::mpsc;
 
 #[allow(unused_macros)]
 macro_rules! function {
@@ -214,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
 
-    let (send, recv) = app::channel::<Message>();
+    let (send, recv) = mpsc::channel::<Message>();
 
     static IMAGEPATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 
@@ -227,7 +228,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             frame.set_image(None::<SharedImage>);
             frame.set_label("Clear");
             frame.changed();
-            send.send(Message::SetTitle("Clear".to_string()));
+            send.send(Message::SetTitle("Clear".to_string())).unwrap();
         }
     }));
 
@@ -275,7 +276,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let Ok(image) = loadresult else {
                         let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
                         eprintln!("{}", msg);
-                        send.send(Message::Alert(msg));
+                        send.send(Message::Alert(msg)).unwrap();
                         clearimage.lock().unwrap()();
                         return;
                     };
@@ -287,7 +288,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((bytes, width, height)) = bresult else {
                             let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg));
+                            send.send(Message::Alert(msg)).unwrap();
                             clearimage.lock().unwrap()();
                             return;
                         };
@@ -296,7 +297,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((scaled_image, nwidth, nheight)) = scale_result else {
                             let msg = format!("scale_image failed: {scale_result:?}");
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg));
+                            send.send(Message::Alert(msg)).unwrap();
                             clearimage.lock().unwrap()();
                             return;
                         };
@@ -311,7 +312,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((indexes, palette)) = qresult else {
                             let msg = format!("Quantization failed: {:?}", qresult.err());
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg));
+                            send.send(Message::Alert(msg)).unwrap();
                             clearimage.lock().unwrap()();
                             return;
                         };
@@ -324,7 +325,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok(mut rgbimage) = rgbresult else {
                             let msg = format!("Quantization failed: {rgbresult:?}");
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg));
+                            send.send(Message::Alert(msg)).unwrap();
                             clearimage.lock().unwrap()();
                             return;
                         };
@@ -338,7 +339,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let pathstr = path.to_string_lossy();
                     frame.set_label(&pathstr);
                     frame.changed();
-                    send.send(Message::SetTitle(pathstr.to_string()));
+                    send.send(Message::SetTitle(pathstr.to_string())).unwrap();
                 }
             });
         }
@@ -395,18 +396,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |panic_info| {
             // invoke the default handler, but then display an alert message
             orig_hook(panic_info);
-            send.send(Message::Alert(format!("{panic_info}")));
+            send.send(Message::Alert(format!("{panic_info}"))).unwrap();
         }
     }));
 
     // app.run()?;
 
     while app.wait() {
-        if let Some(msg) = recv.recv() {
-            match msg {
+        match recv.try_recv() {
+            Ok(msg) => match msg {
                 Message::Alert(s)    => dialog::alert_default(&s),
                 Message::SetTitle(s) => wind.set_label(&s),
-            }
+            },
+            Err(mpsc::TryRecvError::Empty) => (),
+            Err(err) => eprintln!("Channel error: {err}"),
         }
     }
 
