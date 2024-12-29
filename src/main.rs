@@ -279,6 +279,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                             let mut win = win.clone();
                             move || {
                                 cancel_flag.store(true, Ordering::Relaxed);
+                                win.hide();
                                 Window::delete(win.clone());
                                 fltk::app::awake();
                             }
