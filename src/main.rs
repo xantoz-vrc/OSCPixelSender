@@ -92,13 +92,16 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
     (new_indexes, new_palette)
 }
 
-// Make it paletted image and then we reconvert it back to RgbImage
-// for display (I haven't found a way to display paletted images directly in FLTK)
-//
-// TODO: Split this up into two functions, one which returns the
-// indexes+palette and another which turns indexes + palette into an
-// RGBImage for display
-fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32, grayscale_output : bool, reorder_palette : bool, dithering_level : f32) -> Result<RgbImage, Box<dyn Error>> {
+// Make it a paletted image
+fn quantize_image(bytes : &Vec<u8>,
+                  width : usize, height : usize,
+                  max_colors : i32,
+                  dithering_level : f32,
+                  reorder_palette : bool) -> Result<(Vec<u8>, Vec<quantizr::Color>), Box<dyn Error>> {
+
+    // Need to make sure that input buffer is matching width and
+    // height params for an RGBA buffer (4 bytes per pixel)
+    assert!(width * height * 4 == bytes.len());
 
     let qimage = quantizr::Image::new(bytes, width, height)?;
     let mut qopts = quantizr::Options::default();
@@ -109,31 +112,36 @@ fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : 
 
     let mut indexes = vec![0u8; width*height];
     result.remap_image(&qimage, indexes.as_mut_slice())?;
+    assert!(width * height == indexes.len());
 
     let palette = result.get_palette();
 
-    let a : Vec<_>;
-    let b : Vec<_>;
-    let (new_indexes, new_palette) : (&[u8], &[quantizr::Color]) = if reorder_palette {
-        (a, b) = reorder_palette_by_brightness(&indexes, palette);
-        (a.as_slice(), b.as_slice())
+    let result: (Vec<u8>, Vec<quantizr::Color>) = if reorder_palette {
+        reorder_palette_by_brightness(&indexes, palette)
     } else {
-        (indexes.as_slice(), &palette.entries[0..(palette.count as usize)])
+        (indexes, palette.entries[0..(palette.count as usize)].to_vec())
     };
 
-    // -------------------- cut here --------------------
+    Ok(result)
+}
 
+// Turn the quantized thing back into RGB for display
+fn quantized_image_to_rgbimage(indexes : &Vec<u8>,
+                               palette : &Vec<quantizr::Color>,
+                               width : usize,
+                               height : usize,
+                               grayscale_output : bool) -> Result<RgbImage, Box<dyn Error>> {
+    assert!(width * height == indexes.len());
 
-    // Turn the quantized thing back into RGB for display
-    let mut fb: Vec<u8> = vec![0u8; width * height * 4];
+    let mut fb: Vec<u8> = vec![0u8; indexes.len() * 4];
     if !grayscale_output {
-        for (&index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
-            let c : quantizr::Color = new_palette[index as usize];
+        for (&index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
+            let c : quantizr::Color = palette[index as usize];
             pixel.copy_from_slice(&[c.r, c.g, c.b, c.a]);
         }
     } else {
-        for (&index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
-            let index : u8 = index*(255/(palette.count-1)) as u8;
+        for (&index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
+            let index : u8 = index*(255/(palette.len()-1)) as u8;
             pixel.copy_from_slice(&[index, index, index, 255]);
         }
     }
@@ -262,14 +270,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                         };
 
                         let qresult = quantize_image(
-                            &bytes, width, height,
+                            &bytes,
+                            width, height,
                             maxcolors_slider.value() as i32,
-                            grayscale_output_toggle.is_checked(),
-                            reorder_palette_toggle.is_checked(),
                             dithering_slider.value() as f32,
+                            reorder_palette_toggle.is_checked(),
                         );
-                        let Ok(rgbimage) = qresult else {
-                            let msg = format!("Quantization failed: {qresult:?}");
+                        let Ok((indexes, palette)) = qresult else {
+                            let msg = format!("Quantization failed: {:?}", qresult.err());
+                            eprintln!("{}", msg);
+                            dialog::alert_default(&msg);
+                            return;
+                        };
+
+                        let rgbresult = quantized_image_to_rgbimage(
+                            &indexes, &palette,
+                            width, height,
+                            grayscale_output_toggle.is_checked(),
+                        );
+                        let Ok(rgbimage) = rgbresult else {
+                            let msg = format!("Quantization failed: {rgbresult:?}");
                             eprintln!("{}", msg);
                             dialog::alert_default(&msg);
                             return;
