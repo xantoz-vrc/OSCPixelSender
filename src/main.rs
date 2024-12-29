@@ -295,6 +295,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let msg = format!("Quantization failed: {:?}", qresult.err());
                             eprintln!("{}", msg);
                             send.send(Message::Alert(msg));
+                            clearimage.lock().unwrap()();
                             return;
                         };
 
@@ -307,6 +308,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let msg = format!("Quantization failed: {rgbresult:?}");
                             eprintln!("{}", msg);
                             send.send(Message::Alert(msg));
+                            clearimage.lock().unwrap()();
                             return;
                         };
 
