@@ -29,7 +29,7 @@ impl<T> MessageQueueSender<T> {
         };
 
         q.push_back(val);
-        self.queue.1.notify_one(); // Might only be neccessary when the queue was empty prior to push_back
+        self.queue.1.notify_all(); // Might only be neccessary when the queue was empty prior to push_back
 
         Ok(())
     }
@@ -46,7 +46,7 @@ impl<T> MessageQueueSender<T> {
             },
             None => {
                 q.push_back(val);
-                self.queue.1.notify_one();
+                self.queue.1.notify_all();
             },
         }
 
@@ -65,12 +65,12 @@ impl<T> MessageQueueSender<T> {
                     *x = val;
                 } else {
                     q.push_back(val);
-                    self.queue.1.notify_one(); // Might be unneccessary since queue was already not empty
+                    self.queue.1.notify_all(); // Might be unneccessary since queue was already not empty
                 }
             },
             None => {
                 q.push_back(val);
-                self.queue.1.notify_one();
+                self.queue.1.notify_all();
             },
         }
 
