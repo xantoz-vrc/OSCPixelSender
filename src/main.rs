@@ -259,7 +259,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
         match || -> Result<(), Box<dyn Error>> {
             let cancel_flag = Arc::new(AtomicBool::new(false));
-            let (tx, rx) = mpsc::channel::<fltk::misc::Progress>();
+            let (tx, rx) = mpsc::channel::<(Window, fltk::misc::Progress)>();
 
             // New windows need to be created on the main thread, so we message the main thread
             appmsg.send({
@@ -276,17 +276,13 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
                         let cancel_cb = {
                             let cancel_flag = Arc::clone(&cancel_flag);
-                            let mut win = win.clone();
                             move || {
                                 cancel_flag.store(true, Ordering::Relaxed);
-                                win.hide();
-                                Window::delete(win.clone());
-                                fltk::app::awake();
                             }
                         };
 
                         win.set_callback({
-                            let mut cancel_cb = cancel_cb.clone();
+                            let cancel_cb = cancel_cb.clone();
                             move |_win| {
                                 if app::event() == Event::Close {
                                     println!("Send OSC window got Event::close");
@@ -297,7 +293,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
                         let mut cancel_btn = Button::default().with_label("Cancel");
                         cancel_btn.set_callback({
-                            let mut cancel_cb = cancel_cb.clone();
+                            let cancel_cb = cancel_cb.clone();
                             move |_btn| {
                                 println!("Send OSC window cancel button pressed");
                                 cancel_cb();
@@ -306,7 +302,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
                         col.end();
 
-                        tx.send(progressbar)?;
+                        tx.send((win.clone(), progressbar))?;
 
                         Ok(())
                     })
@@ -314,7 +310,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
             })?;
             fltk::app::awake();
 
-            let mut progressbar = rx.recv()?;
+            let (mut win, mut progressbar) = rx.recv()?;
 
             let duration = Duration::from_secs_f32(sleep_time);
 
@@ -374,6 +370,10 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
                 thread::sleep(duration);
             }
+
+            win.hide();  // Needed because Window::delete doesn't cause the window to disappear immediately for some reason
+            Window::delete(win);
+            fltk::app::awake();
 
             Ok(())
         }() {
