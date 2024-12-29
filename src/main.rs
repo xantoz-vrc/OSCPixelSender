@@ -49,6 +49,7 @@ pub enum AppMessage {
     // TODO: instead of passing a closure, just have this return the window to the sender on a sender-provided channel?
     //       Since I think calling window.show() might need to be from the main thread as well this will probably require another message
     //       to show a window
+    // TODO alt: Just have a generic "RunOnMain" message taking a closure.
     CreateWindow(i32, i32, String, Box<dyn FnOnce(&mut Window) -> Result<(), Box<dyn Error>> + Send + Sync>),
     DeleteWindow(Window),
 }
