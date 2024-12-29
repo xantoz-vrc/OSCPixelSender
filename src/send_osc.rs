@@ -287,10 +287,9 @@ pub fn send_osc(
 
             let mut clk: bool = true;
             let chunks = indexes.chunks_exact(16);
-            let mut count: usize = 0;
             let countmax: usize = chunks.len();
             let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
-            for index16 in chunks {
+            for (count, index16) in chunks.enumerate() {
                 if cancel_flag.load(Ordering::Relaxed) {
                     println!("{}", "Send OSC thread cancelled");
                     break;
@@ -305,11 +304,10 @@ pub fn send_osc(
 
                 send_bool("CLK", clk)?;
                 clk = !clk;
-                count += 1;
 
                 let progress = ((count as f64)/(countmax as f64))*100.0;
                 let elapsed = now.elapsed();
-                let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count, countmax, progress, elapsed, eta);
+                let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count+1, countmax, progress, elapsed, eta);
                 println!("{}", msg);
                 progressbar.set_label(&msg);
                 progressbar.set_value(progress);
