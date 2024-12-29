@@ -2,7 +2,7 @@ pub mod mq;
 mod send_osc;
 mod utility;
 
-use utility::print_err;
+use utility::{print_err, error_alert};
 
 use fltk::{app, frame::Frame, enums::*, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
 use std::error::Error;
@@ -286,9 +286,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
             let recvres = receiver.recv();
             let Ok(msg) = recvres else {
                 let s = format!("Error receiving from mq::MessageQueueReceiver: {}", recvres.unwrap_err());
-                eprintln!("{}", s);
-                print_err(appmsg.send(AppMessage::Alert(s)));
-                fltk::app::awake();
+                error_alert(&appmsg, s);
                 continue;
             };
 
@@ -325,11 +323,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     }() {
                         Ok(()) => (),
                         Err(errmsg) => {
-                            let msg = format!("LoadImage fail:\n{errmsg}");
-                            eprintln!("{}", msg);
-                            print_err(appmsg.send(AppMessage::Alert(msg)));
+                            error_alert(&appmsg, format!("LoadImage fail:\n{errmsg}"));
                             print_err(sender.send(BgMessage::ClearImage));
-                            fltk::app::awake();
                         }
                     }
                 },
@@ -358,12 +353,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         Ok(())
                     }() {
                         Ok(()) => (),
-                        Err(errmsg) => {
-                            let msg = format!("ClearImage fail:\n{errmsg}");
-                            eprintln!("{}", msg);
-                            print_err(appmsg.send(AppMessage::Alert(msg)));
-                            fltk::app::awake();
-                        }
+                        Err(errmsg) => error_alert(&appmsg, format!("ClearImage fail:\n{errmsg}")),
                     };
                 },
                 BgMessage::UpdateImage{
@@ -458,11 +448,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     }() {
                         Ok(()) => (),
                         Err(errmsg) => {
-                            let msg = format!("UpdateImage fail:\n{errmsg}");
-                            eprintln!("{}", msg);
-                            print_err(appmsg.send(AppMessage::Alert(msg)));
+                            error_alert(&appmsg, format!("UpdateImage fail:\n{errmsg}"));
                             print_err(sender.send(BgMessage::ClearImage));
-                            fltk::app::awake();
                         },
                     };
                 },
@@ -479,12 +466,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         Ok(())
                     }() {
                         Ok(()) => (),
-                        Err(errmsg) => {
-                            let msg = format!("SendOSC fail:\n{errmsg}");
-                            eprintln!("{}", msg);
-                            print_err(appmsg.send(AppMessage::Alert(msg)));
-                            fltk::app::awake();
-                        },
+                        Err(errmsg) => error_alert(&appmsg, format!("SendOSC fail:\n{errmsg}")),
                     };
                 },
             };
@@ -546,12 +528,7 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
         Ok(())
     }() {
         Ok(()) => (),
-        Err(errmsg) => {
-            let msg = format!("{}:\n{}", function!(), errmsg);
-            eprintln!("{}", msg);
-            print_err(appmsg.send(AppMessage::Alert(msg)));
-            fltk::app::awake();
-        },
+        Err(errmsg) => error_alert(&appmsg, format!("{}:\n{}", function!(), errmsg)),
     }
 }
 
@@ -671,11 +648,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(())
             }() {
                 Ok(()) => (),
-                Err(err) => {
-                    let msg = format!("Openbtn fail: {}", err);
-                    eprintln!("{}", msg);
-                    print_err(appmsg.send(AppMessage::Alert(msg)));
-                }
+                Err(err) => error_alert(&appmsg, format!("Openbtn fail: {err}")),
             }
         }
     });
@@ -688,10 +661,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let sendresult = bg.send_or_replace_if(BgMessage::is_update, BgMessage::ClearImage);
             if sendresult.is_err() {
-                let msg = format!("{}", sendresult.unwrap_err());
-                eprintln!("{}", msg);
-                print_err(appmsg.send(AppMessage::Alert(msg)));
-                fltk::app::awake();
+                error_alert(&appmsg, format!("{}", sendresult.unwrap_err()));
             }
         }
     });
@@ -744,12 +714,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(())
             }() {
                 Ok(()) => (),
-                Err(err) => {
-                    let msg = format!("Send OSC button error: {err}");
-                    eprintln!("{}", msg);
-                    print_err(appmsg.send(AppMessage::Alert(msg)));
-                    fltk::app::awake();
-                }
+                Err(err) => error_alert(&appmsg, format!("Send OSC button error:\n{err}")),
             }
         }
     });

@@ -1,5 +1,5 @@
 use crate::AppMessage;
-use crate::utility::print_err;
+use crate::utility::error_alert;
 
 use fltk::prelude::*;
 use std::thread;
@@ -265,12 +265,7 @@ pub fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette:
             Ok(())
         }() {
             Ok(()) => (),
-            Err(err) => {
-                let msg = format!("send_osc background process failed: {err}");
-                eprintln!("{}", msg);
-                print_err(appmsg.send(AppMessage::Alert(msg)));
-                fltk::app::awake();
-            },
+            Err(err) => error_alert(&appmsg, format!("send_osc background process failed: {err}"))
         };
     });
 
