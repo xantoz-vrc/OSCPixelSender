@@ -164,7 +164,8 @@ fn quantized_image_to_rgbimage(indexes : &Vec<u8>,
         }
     } else {
         for (&index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
-            let index : u8 = index*(255/(palette.len()-1)) as u8;
+            let max: f64 = (palette.len() - 1) as f64;
+            let index: u8 = (index as f64*(255.0/max)).round() as u8;
             pixel.copy_from_slice(&[index, index, index, 255]);
         }
     }
