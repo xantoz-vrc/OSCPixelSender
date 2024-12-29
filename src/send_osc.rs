@@ -110,6 +110,7 @@ impl PixFmt {
 
 fn create_progressbar_window(
     appmsg: &mpsc::Sender<AppMessage>,
+    text_string: Option<String>,
 ) -> Result<(Arc<AtomicBool>, fltk::window::Window, fltk::misc::Progress),
             Box<dyn Error>> {
 
@@ -120,15 +121,8 @@ fn create_progressbar_window(
     appmsg.send({
         let cancel_flag = Arc::clone(&cancel_flag);
         AppMessage::CreateWindow(
-            400, 200, "Sending OSC".to_string(),
+            600, 200, "Sending OSC".to_string(),
             Box::new(move |win| -> Result<(), Box<dyn Error>> {
-                let col = fltk::group::Flex::default_fill().column();
-
-                let mut progressbar = fltk::misc::Progress::default_fill();
-                progressbar.set_minimum(0.0);
-                progressbar.set_maximum(100.0);
-                progressbar.set_value(0.0);
-
                 win.set_callback({
                     let cancel_flag = Arc::clone(&cancel_flag);
                     move |_win| {
@@ -138,6 +132,18 @@ fn create_progressbar_window(
                         }
                     }
                 });
+
+                let mut col = fltk::group::Flex::default_fill().column();
+
+                let mut progressbar = fltk::misc::Progress::default_fill();
+                progressbar.set_minimum(0.0);
+                progressbar.set_maximum(100.0);
+                progressbar.set_value(0.0);
+
+                if let Some(string) = text_string {
+                    let text_frame = fltk::frame::Frame::default_fill().with_label(&string);
+                    col.fixed(&text_frame, 30);
+                }
 
                 let mut cancel_btn = fltk::button::Button::default().with_label("Cancel");
                 cancel_btn.set_callback({
@@ -342,6 +348,7 @@ pub fn send_osc(
     let mut indexes = pack_bytes_clone(&indexes[..], width.try_into()?, bitdepth);
 
     // Optionally apply RLE compression
+    let mut misc_string: Option<String> = None;
     if options.rle_compression {
         // TODO: Also implement an alternative, more efficient, encoding for the case where the
         //  palette color count is 254 or lower for 8bpp, 15 or lower for 4bpp, 3 for 2bpp (kinda
@@ -357,13 +364,16 @@ pub fn send_osc(
         // for chunk in result.chunks(16) {
         //     println!("  {chunk:?}");
         // }
-        println!("RLE Compression ratio: {:.2}% (original length: {}, compressed length: {})",
-                 ((result.len() as f64) / (indexes.len() as f64))*100.0, indexes.len(), result.len());
+        let rle_compression_string =
+            format!("RLE Compression ratio: {:.2}% (original length: {}, compressed length: {})",
+                     ((result.len() as f64) / (indexes.len() as f64))*100.0, indexes.len(), result.len());
+        println!("{}", rle_compression_string);
+        misc_string = Some(rle_compression_string);
 
         indexes = result;
     }
 
-    let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg)?;
+    let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg, misc_string)?;
 
     let palette = palette.clone();
     let appmsg = appmsg.clone();
