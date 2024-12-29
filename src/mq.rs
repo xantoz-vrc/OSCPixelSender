@@ -9,7 +9,7 @@ pub struct SendError<T> {
 
 impl<T> std::fmt::Debug for SendError<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SendError<{}>(message={})", std::any::type_name::<T>(), self.message)
+        write!(f, "SendError<{}> {{ data: .., message: {:?} }}", std::any::type_name::<T>(), self.message)
     }
 }
 
