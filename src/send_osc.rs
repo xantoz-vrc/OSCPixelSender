@@ -163,6 +163,70 @@ fn create_progressbar_window(
     Ok((cancel_flag, win, progressbar))
 }
 
+fn rle_encode(indexes: &[u8]) -> Vec<u8> {
+    // We will likely be smaller, but it probably doesn't hurt to allocate ahead of time even if we
+    // waste a little memory. There is a small chance we will be larger too
+    let mut result: Vec<u8> = Vec::with_capacity(indexes.len());
+
+    let mut count: u8 = 0;
+    let mut current_value: Option<u8> = None;
+    fn maybe_push(
+        result: &mut Vec<u8>,
+        current_value: &mut Option<u8>,
+        count: &mut u8,
+        value: u8,
+    ) {
+        if let Some(curval) = current_value.as_mut() {
+            if *count > 1u8 {
+                result.push(*curval);
+                result.push(*curval);
+                result.push(*count);
+                println!("multi push: {value}x{count}");
+                *curval = value;
+                *count = 1u8;
+            } else if *count == 1u8 {
+                result.push(*curval);
+                *curval = value;
+                *count = 1u8;
+                println!("single push: {value}");
+            } else {
+                panic!("current_value is Some(x) but count == 0");
+            }
+        }
+    }
+
+    for &value in &indexes[..] {
+        // determine whether or not we are at the end two bytes of a
+        // BYTES_PER_SEND chunk and then simply put two bytes as is, because
+        // we cannot fit an escaped RLE sequence thingamajig here
+        if (result.len() % BYTES_PER_SEND) >= (BYTES_PER_SEND - 2) {
+            assert!(count == 1u8);
+            result.push(current_value.expect("current_value should always be Some(x) here"));
+            current_value = Some(value);
+            count = 1;
+        } else if current_value == None {
+            current_value = Some(value);
+            count = 1;
+        } else if value == current_value.expect("current_value should always be Some(x) here") {
+            if let Some(x) = count.checked_add(1) {
+                count = x;
+            } else {
+                // We can no longer fit the count in a single byte if we are to go on, we are forced to start anew
+                result.push(value);
+                result.push(value);
+                result.push(count);
+                // No need to set current_value here as they are identical per the value == current_value check above
+                count = 1;
+            }
+        } else {
+            maybe_push(&mut result, &mut current_value, &mut count, value);
+        }
+    }
+    maybe_push(&mut result, &mut current_value, &mut count, 0);
+
+    result
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SendOSCOpts {
     pub pixfmt: PixFmt,
@@ -170,6 +234,19 @@ pub struct SendOSCOpts {
     pub linesync: bool,
     pub rle_compression: bool,
 }
+
+const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
+
+const BYTES_PER_SEND: usize = 16;
+const PALETTE_COLORS_PER_SEND: usize = (BYTES_PER_SEND-1)/3; // -1 because 1 byte is used up as a command byte
+
+// Defines for communication with the shader
+const SETPIXEL_COMMAND: u8 = 0x80;
+const PALETTEWRITE_COMMAND: u8 = 0xc0;
+const BITDEPTH_PIXEL: u8 = 2;
+const PALETTECTRL_PIXEL: u8 = 3;
+const PALETTEWRIDX_PIXEL: u8 = 4;
+const COMPRESSIONCTRL_PIXEL: u8 = 5;
 
 pub fn send_osc(
     appmsg: &mpsc::Sender<AppMessage>,
@@ -192,19 +269,6 @@ pub fn send_osc(
     let sock = UdpSocket::bind(host_addr)?;
 
     let sleep_time = 1.0/options.msgs_per_second;
-
-    const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
-
-    const BYTES_PER_SEND: usize = 16;
-    const PALETTE_COLORS_PER_SEND: usize = (BYTES_PER_SEND-1)/3; // -1 because 1 byte is used up as a command byte
-
-    // Defines for communication with the shader
-    const SETPIXEL_COMMAND: u8 = 0x80;
-    const PALETTEWRITE_COMMAND: u8 = 0xc0;
-    const BITDEPTH_PIXEL: u8 = 2;
-    const PALETTECTRL_PIXEL: u8 = 3;
-    const PALETTEWRIDX_PIXEL: u8 = 4;
-    const COMPRESSIONCTRL_PIXEL: u8 = 5;
 
     // Get the bitdepth and whether we should be indexed or grayscale from pixfmt
     // TODO: Perhaps it would've made more sense with a regular old struct for
@@ -273,72 +337,20 @@ pub fn send_osc(
 
     // Optionally apply RLE compression
     if options.rle_compression {
-        let mut result: Vec<u8> = Vec::new();
+        // TODO: Also implement an alternative, more efficient, encoding for the case where the
+        //  palette color count is 254 or lower for 8bpp, 15 or lower for 4bpp, 3 for 2bpp (kinda
+        //  pointless), and perhaps not that usable for 8bpp: instead of duplicated byte as escape,
+        //  use a 255 byte as the escape as that won't appear in the uncompressed bytestream when
+        //  this is true. (could work without this req too, but then we have to escape single 255s
+        //  as 255, 1)
 
-        // TODO: More efficient encoding for the case where the palette color count is 254 or lower for 8bpp, 15 or lower for 4bpp, 3 for 2bpp (kinda pointless. And not applicable for 1bpp:
-        //  instead of duplicated byte as escape, use a 255 byte as the escape as that won't appear in the uncompressed bytestream when this is true. (could work without this req too, but then having to escape every 255 as 255, 1 is going to be inefficient)
+        let result = rle_encode(&indexes[..]);
 
-        let mut count: u8 = 0;
-        let mut current_value: Option<u8> = None;
-        fn maybe_push(
-            result: &mut Vec<u8>,
-            current_value: &mut Option<u8>,
-            count: &mut u8,
-            value: u8,
-        ) {
-            if let Some(curval) = current_value.as_mut() {
-                if *count > 1u8 {
-                    result.push(*curval);
-                    result.push(*curval);
-                    result.push(*count);
-                    println!("multi push: {value}x{count}");
-                    *curval = value;
-                    *count = 1u8;
-                } else if *count == 1u8 {
-                    result.push(*curval);
-                    *curval = value;
-                    *count = 1u8;
-                    println!("single push: {value}");
-                } else {
-                    panic!("current_value is Some(x) but count == 0");
-                }
-            }
-        }
-
-        for &value in &indexes[..] {
-            // determine whether or not we are at the end two bytes of a
-            // BYTES_PER_SEND chunk and then simply put two bytes as is, because
-            // we cannot fit an escaped RLE sequence thingamajig here
-            if (result.len() % BYTES_PER_SEND) >= (BYTES_PER_SEND - 2) {
-                assert!(count == 1u8);
-                result.push(current_value.expect("current_value should always be Some(x) here"));
-                current_value = Some(value);
-                count = 1;
-            } else if current_value == None {
-                current_value = Some(value);
-                count = 1;
-            } else if value == current_value.expect("current_value should always be Some(x) here") {
-                if let Some(x) = count.checked_add(1) {
-                    count = x;
-                } else {
-                    // We can no longer fit the count in a single byte if we are to go on, we are forced to start anew
-                    result.push(value);
-                    result.push(value);
-                    result.push(count);
-                    // No need to set current_value here as they are identical per the value == current_value check above
-                    count = 1;
-                }
-            } else {
-                maybe_push(&mut result, &mut current_value, &mut count, value);
-            }
-        }
-        maybe_push(&mut result, &mut current_value, &mut count, 0);
-
-        // DEBUG OUTPUT
-        println!("RLE compressed data:");
-        for chunk in result.chunks(16) {
-            println!("  {chunk:?}");
-        }
+        // // DEBUG OUTPUT
+        // println!("RLE compressed data:");
+        // for chunk in result.chunks(16) {
+        //     println!("  {chunk:?}");
+        // }
         println!("RLE Compression ratio: {:.2}% (original length: {}, compressed length: {})",
                  ((result.len() as f64) / (indexes.len() as f64))*100.0, indexes.len(), result.len());
 
