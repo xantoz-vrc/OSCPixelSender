@@ -1,7 +1,5 @@
 use fltk::{app, frame::Frame, enums::FrameType, image::SharedImage, prelude::*, window::Window, group::*, button::Button, dialog};
 use std::error::Error;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::path::PathBuf;
 
 fn get_file() -> Option<PathBuf> {
@@ -37,10 +35,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut row = Flex::default_fill().row();
     // row.set_margin(20);
     row.set_spacing(20);
-    let frame = Rc::new(RefCell::new(Frame::default_fill()));
-    frame.borrow_mut().set_frame(FrameType::DownBox);
-    // let mut borrow = frame.borrow_mut();
-    // borrow.set_frame(FrameType::DownBox);
+    let mut frame = Frame::default_fill();
+    frame.set_frame(FrameType::DownBox);
 
     let mut col = Flex::default_fill().column();
     col.set_margin(20);
@@ -52,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&clearbtn, 50);
 
     openbtn.set_callback({
-        let frc = Rc::clone(&frame);
+        let mut fr = frame.clone();
         move |_| {
             println!("Open button pressed");
 
@@ -74,7 +70,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Ok(mut image) => {
                     println!("Loaded image {path:?}");
-                    let mut fr = frc.borrow_mut();
 
                     println!("(before scale) w,h: {},{}", image.width(), image.height());
                     image.scale(256, 256, true, true);
@@ -93,11 +88,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     clearbtn.set_callback({
-        let frc : Rc::<RefCell::<Frame>> = Rc::clone(&frame);
+        let mut fr = frame.clone();
         move |_| {
             println!("Clear button pressed");
 
-            let mut fr = frc.borrow_mut();
             fr.set_image(None::<SharedImage>);
             fr.set_label("Clear");
             fr.changed();
