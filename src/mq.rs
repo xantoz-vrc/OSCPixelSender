@@ -1,3 +1,5 @@
+// TODO: Need to support "Disconnected" state like e.g. std::mpsc::chanel. If the sender disconnects the receiver might need to know
+
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::collections::vec_deque::{VecDeque};
 use std::error::Error;
