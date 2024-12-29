@@ -77,10 +77,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "quantizr"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84e2f78ed4e6c7c5cf8f080e8f4683796749934204c4c25c0a222518ba178d39"
+
+[[package]]
 name = "rust_image_fiddler"
 version = "0.1.0"
 dependencies = [
  "fltk",
+ "quantizr",
 ]
 
 [[package]]
