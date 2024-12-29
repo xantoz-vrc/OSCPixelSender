@@ -12,7 +12,7 @@ pub enum Message {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let (tx, mut rx) = mq::mq::<Message>();
+    let (tx, rx) = mq::mq::<Message>();
 
 /*
     let _handle1 = thread::spawn({
