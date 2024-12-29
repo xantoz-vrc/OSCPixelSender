@@ -388,6 +388,17 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
     Ok(())
 }
 
+fn enable_send_osc_button(active: bool) -> Result<(), String> {
+    let mut send_osc_btn: Button = app::widget_from_id("send_osc_btn").ok_or("widget_from_id fail")?;
+    if active {
+        send_osc_btn.activate();
+    } else {
+        send_osc_btn.deactivate();
+    }
+    fltk::app::awake();
+    Ok(())
+}
+
 fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread::JoinHandle<()>, mq::MessageQueueSender<BgMessage>) {
     let (sender, receiver) = mq::mq::<BgMessage>();
 
@@ -466,7 +477,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         palette_frame.set_image(None::<RgbImage>);
                         palette_frame.changed();
 
-                        // TODO: Disable Send OSC button
+                        enable_send_osc_button(false)?;
 
                         appmsg.send(AppMessage::SetTitle("Clear".to_string()))
                             .map_err(|err| format!("Send error: {err}"))?;
@@ -495,6 +506,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     multiplier,
                 } => {
                     match || -> Result<(), String> {
+                        enable_send_osc_button(false)?;
+
                         let Some(ref image) = sharedimage else {
                             eprintln!("No image loaded");
                             return Ok(());
@@ -550,7 +563,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             }
 
                             indexes_and_palette = Some((indexes, palette));
-                            // TODO: Enable Send OSC button
+                            enable_send_osc_button(true)?;
                         } else {
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                             frame.set_image(Some(image.clone()));
@@ -559,6 +572,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
                             // TODO: there should be a fallback here maybe
                             indexes_and_palette = None;
+                            enable_send_osc_button(false)?;
                         }
 
                         fltk::app::awake();
@@ -716,7 +730,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // TODO: a separator to separate the OSC stuff
 
     const OSC_SPEED_DEFAULT: f64 = 2.0;
-    let mut send_osc_btn = Button::default().with_label("Send OSC").with_id("send_osc_button");
+    let mut send_osc_btn = Button::default().with_label("Send OSC").with_id("send_osc_btn");
+    send_osc_btn.deactivate();
     let mut osc_speed_slider = HorValueSlider::default().with_label("OSC updates/second").with_id("osc_speed_slider");
     osc_speed_slider.set_range(0.5, 20.0);
     osc_speed_slider.set_step(0.5, 1);
