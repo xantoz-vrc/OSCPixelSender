@@ -75,7 +75,7 @@ impl FromStr for PixFmt {
             "Bpp4"            => Ok(Self::Bpp4(Default::default())),
             "Bpp8"            => Ok(Self::Bpp8(Default::default())),
             "Auto(Indexed)"   => Ok(Self::Auto(Color::Indexed)),
-            "Auto(Grayscale)" => Ok(Self::Bpp1(Color::Grayscale)),
+            "Auto(Grayscale)" => Ok(Self::Auto(Color::Grayscale)),
             "Bpp1(Indexed)"   => Ok(Self::Bpp1(Color::Indexed)),
             "Bpp2(Indexed)"   => Ok(Self::Bpp2(Color::Indexed)),
             "Bpp4(Indexed)"   => Ok(Self::Bpp4(Color::Indexed)),
