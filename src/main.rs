@@ -749,6 +749,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     osc_speed_slider.set_step(0.5, 1);
     osc_speed_slider.set_value(OSC_SPEED_DEFAULT);
     let osc_rle_compression_toggle = CheckButton::default().with_label("Use RLE compression").with_id("osc_rle_compression_toggle");
+    osc_rle_compression_toggle.set_checked(true);
     let mut osc_pixfmt_choice = menu::Choice::default()
         .with_label("OSC Pixel format");
     // let pixfmt_choices = send_osc::PixFmt::into_iter().fold("".to_string(), |acc, s| format!("{acc}|{}", s.to_string()));
