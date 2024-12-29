@@ -334,6 +334,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let pathstr = path.to_string_lossy();
                     frame.set_label(&pathstr);
                     frame.changed();
+                    fltk::app::awake();
                     try_send(Message::SetTitle(pathstr.to_string()))?;
 
                     println!("Finished processing for {path:?}");
