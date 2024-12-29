@@ -176,6 +176,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let imagepath_arc : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
 
+    let clearimage_arc = Arc::new(Mutex::new({
+        let mut fr = frame.clone();
+        let mut wn = wind.clone();
+        let imagepath = Arc::clone(&imagepath_arc);
+        move || {
+            *(imagepath.write().unwrap()) = None;
+            fr.set_image(None::<SharedImage>);
+            fr.set_label("Clear");
+            fr.changed();
+            wn.set_label("Clear");
+        }
+    }));
+
     let loadimage_arc = Arc::new(Mutex::new({
         let mut fr = frame.clone();
         let mut wn = wind.clone();
@@ -183,19 +196,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         let gr_output_toggle = grayscale_output_toggle.clone();
         let reorder_palette_toggle = reorder_palette_toggle.clone();
         let imagepath = Arc::clone(&imagepath_arc);
+        let clearimage = Arc::clone(&clearimage_arc);
         move || {
             println!("loadimage called");
 
-            let Some(path) = &*(imagepath.read().unwrap()) else {
-                eprintln!("No file selected");
-                return;
+            // Clone the path, we do not want to keep holding the
+            // lock. It can lead to deadlock with clearimage otherwise
+            // for one.
+            let path = {
+                let imagepath_readguard = imagepath.read().unwrap();
+                let Some(path) = &*imagepath_readguard else {
+                    eprintln!("No file selected");
+                    return;
+                };
+                path.clone()
             };
 
-            let loadresult = SharedImage::load(path);
+            let loadresult = SharedImage::load(&path);
             let Ok(image) = loadresult else {
                 let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
                 eprintln!("{}", msg);
                 dialog::alert_default(&msg);
+                clearimage.lock().unwrap()();
                 return;
             };
 
@@ -240,16 +262,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     clearbtn.set_callback({
-        let mut fr = frame.clone();
-        let imagepath = Arc::clone(&imagepath_arc);
+        let clearimage = Arc::clone(&clearimage_arc);
+
         move |_| {
             println!("Clear button pressed");
-
-            *(imagepath.write().unwrap()) = None;
-
-            fr.set_image(None::<SharedImage>);
-            fr.set_label("Clear");
-            fr.changed();
+            clearimage.lock().unwrap()();
         }
     });
 
