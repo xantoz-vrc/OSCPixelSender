@@ -53,12 +53,9 @@ pub fn mq<T>() -> (MessageQueueSender<T>, MessageQueueReceiver<T>) {
 
 impl<T> MessageQueueSender<T> {
     pub fn send(&self, val: T) -> Result<(), SendError<T>> {
-        let lockres = self.queue.0.lock();
-        let Ok(mut q) = lockres else {
-            return Err(SendError::<T> {
-                data: val,
-                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
-            });
+        let mut q = match self.queue.0.lock() {
+            Ok(q) => q,
+            Err(err) => return Err(SendError::<T> { data: val, message: format!("Error locking mutex: {err}") }),
         };
 
         q.push_back(val);
@@ -68,12 +65,9 @@ impl<T> MessageQueueSender<T> {
     }
 
     pub fn send_or_replace(&self, val: T) -> Result<(), SendError<T>> {
-        let lockres = self.queue.0.lock();
-        let Ok(mut q) = lockres else {
-            return Err(SendError::<T> {
-                data: val,
-                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
-            });
+        let mut q = match self.queue.0.lock() {
+            Ok(q) => q,
+            Err(err) => return Err(SendError::<T> { data: val, message: format!("Error locking mutex: {err}") }),
         };
 
         match q.back_mut() {
@@ -90,12 +84,9 @@ impl<T> MessageQueueSender<T> {
     }
 
     pub fn send_or_replace_if<F: FnOnce(&T) -> bool>(&self, pred: F, val: T) -> Result<(), SendError<T>> {
-        let lockres = self.queue.0.lock();
-        let Ok(mut q) = lockres else {
-            return Err(SendError::<T> {
-                data: val,
-                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
-            });
+        let mut q = match self.queue.0.lock() {
+            Ok(q) => q,
+            Err(err) => return Err(SendError::<T> { data: val, message: format!("Error locking mutex: {err}") }),
         };
 
         match q.back_mut() {
@@ -114,12 +105,9 @@ impl<T> MessageQueueSender<T> {
     }
 
     pub fn is_empty(&self) -> Result<bool, SendError<()>> {
-        let lockres = self.queue.0.lock();
-        let Ok(q) = lockres else {
-            return Err(SendError::<()> {
-                data: (),
-                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
-            });
+        let q = match self.queue.0.lock() {
+            Ok(q) => q,
+            Err(err) => return Err(SendError::<()> { data: (), message: format!("Error locking mutex: {err}") }),
         };
 
         Ok(q.is_empty())
