@@ -101,6 +101,7 @@ pub fn save_png(
     };
     encoder.set_color(typ);
     encoder.set_depth(bitdepth);
+    encoder.set_compression(png::Compression::Best);
 
     println!("Saving PNG of color {typ:?} with bit depth {bitdepth:?}");
 
