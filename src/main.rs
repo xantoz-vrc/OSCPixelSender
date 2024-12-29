@@ -540,7 +540,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
             match || -> Result<(), Box<dyn Error>> {
-                bg.send(BgMessage::LoadImage(path))?;
+                bg.send_or_replace_if(BgMessage::is_update, BgMessage::LoadImage(path))?;
                 Ok(())
             }() {
                 Ok(()) => (),
@@ -559,7 +559,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |_| {
             println!("Clear button pressed");
 
-            let sendresult = bg.send(BgMessage::ClearImage);
+            let sendresult = bg.send_or_replace_if(BgMessage::is_update, BgMessage::ClearImage);
             if sendresult.is_err() {
                 let msg = format!("{}", sendresult.unwrap_err());
                 eprintln!("{}", msg);
