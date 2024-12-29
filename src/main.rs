@@ -113,8 +113,6 @@ fn scale_image_bilinear(src: &[u8],
                         nwidth: u32, nheight: u32,
                         resize: ResizeType
 ) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
-    // use std::mem::MaybeUninit;
-    // use alloc::alloc::{alloc, Layout};
     type F = f64;
 
     let width = width as usize;
@@ -141,18 +139,6 @@ fn scale_image_bilinear(src: &[u8],
     };
 
     println!("{}: width={width}, height={height}, nwidth={nwidth}, nheight={nheight}", function!());
-
-    // // Safety:
-    // // We fill every single byte of the resulting buffer
-    // unsafe {
-    //     let size: usize = (width * height * 4) as usize;
-
-    //     // It will be nice when Box::new_uninit_slice starts existing
-    //     let mut buffer: Box<[MaybeUninit<u8>]> = Box::from_raw(
-    //         alloc(Layout::from_size_align(size, 16)?)
-    //             as *mut [MaybeUninit<u8>; size]
-    //     );
-    // }
 
     let x_scale: F = (width as F)/(nwidth as F);
     let y_scale: F = (height as F)/(nheight as F);
