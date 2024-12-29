@@ -342,21 +342,26 @@ pub fn send_osc(
             current_value: &mut Option<u8>,
             count: &mut u8,
             value: u8,
-        ) {
+        ) -> bool {
             if let Some(curval) = current_value.as_mut() {
                 if *count > 1u8 {
                     result.push(*curval);
                     result.push(*curval);
                     result.push(*count);
+                    println!("multi push: {value}x{count}");
                     *curval = value;
                     *count = 1u8;
                 } else if *count == 1u8 {
                     result.push(*curval);
                     *curval = value;
                     *count = 1u8;
+                    println!("single push: {value}");
                 } else {
                     panic!("current_value is Some(x) but count == 0");
                 }
+                true
+            } else {
+                false
             }
         }
 
@@ -365,10 +370,13 @@ pub fn send_osc(
             // BYTES_PER_SEND chunk and then simply put two bytes as is, because
             // we cannot fit an escaped RLE sequence thingamajig here
             if (result.len() % BYTES_PER_SEND) >= (BYTES_PER_SEND - 2) {
-                maybe_push(&mut result, &mut current_value, &mut count, value);
-                result.push(value);
-                current_value = None;
-                count = 0;
+                let a = maybe_push(&mut result, &mut current_value, &mut count, value);
+                println!("maybe_push: {a}");
+                if !a {
+                    result.push(value);
+                    current_value = None;
+                    count = 0;
+                }
             } else if current_value == None {
                 current_value = Some(value);
                 count = 1;
@@ -390,12 +398,12 @@ pub fn send_osc(
         maybe_push(&mut result, &mut current_value, &mut count, 0);
 
         // DEBUG OUTPUT
-        println!("RLE Compression ratio: {:.2}% (original length: {}, compressed length: {})",
-                 ((result.len() as f64) / (indexes.len() as f64))*100.0, indexes.len(), result.len());
         println!("RLE compressed data:");
         for chunk in result.chunks(16) {
             println!("  {chunk:?}");
         }
+        println!("RLE Compression ratio: {:.2}% (original length: {}, compressed length: {})",
+                 ((result.len() as f64) / (indexes.len() as f64))*100.0, indexes.len(), result.len());
 
         indexes = result;
     }
