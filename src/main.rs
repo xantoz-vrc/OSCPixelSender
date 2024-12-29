@@ -686,6 +686,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         min(1000, screen_size_int.1 - 64)
     );
 
+    let small_screen = screen_size_int.1 < 1000;
+
     let mut row = Flex::default_fill().row();
     // row.set_margin(20);
     row.set_spacing(20);
@@ -702,7 +704,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut col = Flex::default_fill().column();
     row.fixed(&col, 280);
     col.set_margin(20);
-    col.set_spacing(20);
+    col.set_spacing(if small_screen { 15 } else { 20 });
     let mut openbtn = Button::default().with_label("Open");
     let mut savebtn = Button::default().with_label("Save").with_id("savebtn");
     savebtn.deactivate();
@@ -768,24 +770,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     osc_pixfmt_choice.set_value(0);
 
-    col.fixed(&openbtn, 50);
-    col.fixed(&savebtn, 50);
-    col.fixed(&clearbtn, 50);
-    col.fixed(&no_quantize_toggle, 30);
-    col.fixed(&grayscale_toggle, 30);
-    col.fixed(&grayscale_output_toggle, 20);
-    col.fixed(&reorder_palette_toggle, 20);
-    col.fixed(&maxcolors_slider, 30);
-    col.fixed(&dithering_slider, 30);
-    col.fixed(&scaling_toggle, 30);
-    col.fixed(&scale_input, 30);
-    col.fixed(&resize_type_choice, 30);
-    col.fixed(&multiplier_choice, 30);
+    let button_size = if small_screen { 30 } else { 50 };
+    let toggle_size = if small_screen { 20 } else { 30 };
+    let slider_size = if small_screen { 25 } else { 30 };
+    let choice_size = if small_screen { 25 } else { 30 };
+    let input_size = if small_screen { 20 } else { 30 };
+    col.fixed(&openbtn, button_size);
+    col.fixed(&savebtn, button_size);
+    col.fixed(&clearbtn, button_size);
+    col.fixed(&no_quantize_toggle, toggle_size);
+    col.fixed(&grayscale_toggle, toggle_size);
+    col.fixed(&grayscale_output_toggle, toggle_size);
+    col.fixed(&reorder_palette_toggle, toggle_size);
+    col.fixed(&maxcolors_slider, slider_size);
+    col.fixed(&dithering_slider, slider_size);
+    col.fixed(&scaling_toggle, toggle_size);
+    col.fixed(&scale_input, input_size);
+    col.fixed(&resize_type_choice, choice_size);
+    col.fixed(&multiplier_choice, choice_size);
     col.fixed(&divider, 5);
-    col.fixed(&send_osc_btn, 50);
-    col.fixed(&osc_speed_slider, 30);
-    col.fixed(&osc_rle_compression_toggle, 30);
-    col.fixed(&osc_pixfmt_choice, 30);
+    col.fixed(&send_osc_btn, button_size);
+    col.fixed(&osc_speed_slider, slider_size);
+    col.fixed(&osc_rle_compression_toggle, toggle_size);
+    col.fixed(&osc_pixfmt_choice, choice_size);
 
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
     let (joinhandle, bg) = start_background_process(&appmsg);
