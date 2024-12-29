@@ -234,98 +234,75 @@ fn main() -> Result<(), Box<dyn Error>> {
     fn loadimage() {
         println!("loadimage called");
 
-        thread::spawn({
-            || {
-                let mut frame: Frame = app::widget_from_id("frame").unwrap();
-                let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").unwrap();
-                let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").unwrap();
-                let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").unwrap();
-                let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").unwrap();
-                let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").unwrap();
-                let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").unwrap();
+        thread::spawn(|| {
+            match (
+                || -> Result<(), String> {
+                    let mut frame: Frame = app::widget_from_id("frame").unwrap();
+                    let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").unwrap();
+                    let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").unwrap();
+                    let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").unwrap();
+                    let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").unwrap();
+                    let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").unwrap();
+                    let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").unwrap();
 
-                // Clone the path, we do not want to keep holding the
-                // lock. It can lead to deadlock with clearimage otherwise
-                // for one.
-                let path = {
-                    let imagepath_readguard = IMAGEPATH.read().unwrap();
-                    let Some(ref path) = *imagepath_readguard else {
-                        eprintln!("loadimage: No file selected/imagepath not set");
-                        return;
+                    // Clone the path, we do not want to keep holding the
+                    // lock. It can lead to deadlock with clearimage otherwise
+                    // for one.
+                    let path = {
+                        let imagepath_readguard = IMAGEPATH.read().unwrap();
+                        let Some(ref path) = *imagepath_readguard else {
+                            eprintln!("loadimage: No file selected/imagepath not set");
+                            return Ok(());
+                        };
+                        path.clone()
                     };
-                    path.clone()
-                };
 
-                // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
-                //       We should only convert to FLTK image format at the very end
-                let loadresult = SharedImage::load(&path);
-                let Ok(image) = loadresult else {
-                    let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
+                    // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
+                    //       We should only convert to FLTK image format at the very end
+                    let image = SharedImage::load(&path).map_err(|err| format!("Image load for image {path:?} failed: {err:?}"))?;
+                    println!("Loaded image {path:?}");
+
+                    if !no_quantize_toggle.is_checked() {
+                        let (bytes, width, height) = sharedimage_to_bytes(&image, grayscale_toggle.is_checked())
+                            .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
+
+                        let (scaled_image, nwidth, nheight) = scale_image(&bytes, width, height, 128, 128)
+                            .map_err(|err| format!("scale_image failed: {err:?}"))?;
+
+                        let (indexes, palette) = quantize_image(
+                            &scaled_image,
+                            nwidth, nheight,
+                            maxcolors_slider.value() as i32,
+                            dithering_slider.value() as f32,
+                            reorder_palette_toggle.is_checked(),
+                        ).map_err(|err| format!("Quantization failed: {err:?}"))?;
+
+                        let mut rgbimage = quantized_image_to_rgbimage(
+                            &indexes, &palette,
+                            nwidth, nheight,
+                            grayscale_output_toggle.is_checked(),
+                        ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
+
+                        rgbimage.scale(1024, 1024, true, true); // Display larger
+                        frame.set_image(Some(rgbimage));
+                    } else {
+                        frame.set_image(Some(image));
+                    }
+
+                    let pathstr = path.to_string_lossy();
+                    frame.set_label(&pathstr);
+                    frame.changed();
+                    SEND.get().unwrap().send(Message::SetTitle(pathstr.to_string())).unwrap();
+
+                    Ok(())
+                }
+            )() {
+                Ok(()) => (),
+                Err(msg) => {
                     eprintln!("{}", msg);
                     SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
                     clearimage();
-                    return;
-                };
-
-                println!("Loaded image {path:?}");
-
-                if !no_quantize_toggle.is_checked() {
-                    let bresult = sharedimage_to_bytes(&image, grayscale_toggle.is_checked());
-                    let Ok((bytes, width, height)) = bresult else {
-                        let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
-                        eprintln!("{}", msg);
-                        SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
-                        clearimage();
-                        return;
-                    };
-
-                    let scale_result = scale_image(&bytes, width, height, 128, 128);
-                    let Ok((scaled_image, nwidth, nheight)) = scale_result else {
-                        let msg = format!("scale_image failed: {scale_result:?}");
-                        eprintln!("{}", msg);
-                        SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
-                        clearimage();
-                        return;
-                    };
-
-                    let qresult = quantize_image(
-                        &scaled_image,
-                        nwidth, nheight,
-                        maxcolors_slider.value() as i32,
-                        dithering_slider.value() as f32,
-                        reorder_palette_toggle.is_checked(),
-                    );
-                    let Ok((indexes, palette)) = qresult else {
-                        let msg = format!("Quantization failed: {:?}", qresult.err());
-                        eprintln!("{}", msg);
-                        SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
-                        clearimage();
-                        return;
-                    };
-
-                    let rgbresult = quantized_image_to_rgbimage(
-                        &indexes, &palette,
-                        nwidth, nheight,
-                        grayscale_output_toggle.is_checked(),
-                    );
-                    let Ok(mut rgbimage) = rgbresult else {
-                        let msg = format!("Quantization failed: {rgbresult:?}");
-                        eprintln!("{}", msg);
-                        SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
-                        clearimage();
-                        return;
-                    };
-
-                    rgbimage.scale(1024, 1024, true, true); // Display larger
-                    frame.set_image(Some(rgbimage));
-                } else {
-                    frame.set_image(Some(image));
-                }
-
-                let pathstr = path.to_string_lossy();
-                frame.set_label(&pathstr);
-                frame.changed();
-                SEND.get().unwrap().send(Message::SetTitle(pathstr.to_string())).unwrap();
+                },
             }
         });
     }
