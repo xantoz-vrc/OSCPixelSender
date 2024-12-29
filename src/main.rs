@@ -333,6 +333,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             return Ok(());
                         };
 
+                        let now = std::time::Instant::now();
+
                         if !no_quantize {
                             let mut bytes: Vec<u8>;
                             let mut width: usize;
@@ -388,7 +390,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
                         fltk::app::awake();
 
-                        println!("Finished updating image");
+                        println!("Finished updating image (took {:.2?})", now.elapsed());
 
                         Ok(())
                     }() {
