@@ -2,6 +2,8 @@ use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, pre
 use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
+use rayon::prelude::*;
+use std::fmt;
 
 fn get_file() -> Option<PathBuf> {
     let mut nfc = dialog::NativeFileChooser::new(dialog::FileDialogType::BrowseFile);
@@ -28,14 +30,75 @@ fn get_file() -> Option<PathBuf> {
     }
 }
 
-fn sharedimage_to_bytes(image : &SharedImage) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>>
-{
-    let bytes : Vec<u8> = image.to_rgb_image()?.convert(ColorDepth::Rgba8)?.to_rgb_data();
+fn sharedimage_to_bytes(image : &SharedImage, grayscale : bool) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
+    // let bytes : Vec<u8> = image.to_rgb_image()?.convert(ColorDepth::L8)?.convert(ColorDepth::Rgba8)?.to_rgb_data();
+
+    let mut rgbimage = image.to_rgb_image()?;
+    if grayscale {
+        rgbimage = rgbimage.convert(ColorDepth::L8)?;
+    }
+
+    let bytes : Vec<u8> = rgbimage.convert(ColorDepth::Rgba8)?.to_rgb_data();
     println!("bytes.len(): {}", bytes.len());
-    let width : usize = image.data_w().try_into()?;
-    let height : usize = image.data_h().try_into()?;
+    let width : usize = rgbimage.data_w().try_into()?;
+    let height : usize = rgbimage.data_h().try_into()?;
 
     Ok((bytes, width, height))
+}
+
+/*
+impl fmt::Debug for quantizr::Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Custom output format: Point(x, y)
+        write!(f, "{:03}, {:03}, {:03}, {:03}", self.r, self.g, self.b, self.a)
+    }
+}
+*/
+
+// Ugly hack to workaround quantizr not being really made for
+// grayscale by reordering the pallette, which means that the indexes
+// should be able to be used without the palette as a sort-of
+// grayscale image
+fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palette) -> (Vec<u8>, Vec<quantizr::Color>)
+{
+    let mut permutation : Vec<usize> = (0..(palette.count as usize)).collect();
+    dbg!(&permutation);
+    permutation.sort_by_key(|&i| {
+        let c = palette.entries[i];
+        let (r,g,b) = (c.r as i32, c.g as i32, c.b as i32);
+        r + g + b
+    });
+    dbg!(&permutation);
+
+
+    /*
+    let new_palette : Vec<quantizr::Color> =
+        permutation.iter()
+        .map(|&i| palette.entries[i])
+        .collect();
+    */
+
+    let mut new_palette : Vec<quantizr::Color> = vec![quantizr::Color { r: 0, g: 0, b: 0, a: 0}; palette.count as usize];
+    for (old_idx, &new_idx) in permutation.iter().enumerate() {
+        new_palette[new_idx] = palette.entries[old_idx];
+    }
+
+    // dbg!(palette.entries[0..(palette.count as usize)]);
+    // dbg!(new_palette);
+
+    dbg!(palette.entries[0..(palette.count as usize)].iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
+    dbg!(new_palette.iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
+
+    // for (new_idx, old_idx) in permutation.iter().enumerate() {
+    //     palette.entries.swap(new_idx, *old_idx);
+    // }
+
+    // Trying out fancy rayon parallel iterators
+    let new_indexes : Vec<u8> = indexes.par_iter().map(
+        |ic| permutation[*ic as usize] as u8
+    ).collect();
+
+    (new_indexes, new_palette)
 }
 
 // Make it palletted image and then we reconvert it back to RgbImage
@@ -44,11 +107,11 @@ fn sharedimage_to_bytes(image : &SharedImage) -> Result<(Vec<u8>, usize, usize),
 // TODO: Split this up into two functions, one which returns the
 // indexes+palette and another which turns indexes + palette into an
 // RGBImage for display
-fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize) -> Result<RgbImage, Box<dyn Error>> {
+fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32) -> Result<RgbImage, Box<dyn Error>> {
 
     let qimage = quantizr::Image::new(bytes, width, height)?;
     let mut qopts = quantizr::Options::default();
-    qopts.set_max_colors(16)?;
+    qopts.set_max_colors(max_colors)?;
 
     let mut result = quantizr::QuantizeResult::quantize(&qimage, &qopts);
     result.set_dithering_level(1.0)?;
@@ -58,14 +121,31 @@ fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize) -> Result<Rgb
 
     let palette = result.get_palette();
 
+    let (new_indexes, new_palette) = reorder_palette_by_brightness(&indexes, palette);
+    // let (new_indexes, new_palette) = (indexes, &palette.entries);
+
     // -------------------- cut here --------------------
+
 
     // Turn the quantized thing back into RGB for display
     let mut fb: Vec<u8> = vec![0u8; width * height * 4];
-    for (index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
-        let c : quantizr::Color = palette.entries[index as usize];
+    for (index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
+        let c : quantizr::Color = new_palette[index as usize];
         pixel.copy_from_slice(&[c.r, c.g, c.b, c.a]);
     }
+
+/*
+    let mut fb: Vec<u8> = vec![0u8; width * height * 4];
+    for (index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
+    }
+
+/*
+    let mut fb: Vec<u8> = vec![0u8; width * height * 4];
+    for (index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
+        let index : u8 = index*palette.count as u8;
+        pixel.copy_from_slice(&[index, index, index, index]);
+    }
+*/
 
     Ok(RgbImage::new(&fb, width as i32, height as i32, ColorDepth::Rgba8)?)
 }
@@ -112,14 +192,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     eprintln!("{}", msg);
                     dialog::alert_default(&msg);
                 },
-                Ok(mut image) => {
+                Ok(/*mut*/ image) => {
                     println!("Loaded image {path:?}");
 
                     println!("(before scale) w,h: {},{}", image.width(), image.height());
-                    image.scale(256, 256, true, true);
+                    //image.scale(256, 256, true, true);
                     println!("(after scale) w,h: {},{}", image.width(), image.height());
 
-                    let bresult = sharedimage_to_bytes(&image);
+                    let bresult = sharedimage_to_bytes(&image, false);
                     let Ok((bytes, width, height)) = bresult else {
                         let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                         eprintln!("{}", msg);
@@ -127,7 +207,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         return;
                     };
 
-                    let qresult = quantize_image(&bytes, width, height);
+                    let qresult = quantize_image(&bytes, width, height, 16);
                     let Ok(rgbimage) = qresult else {
                         let msg = format!("Quantization failed: {qresult:?}");
                         eprintln!("{}", msg);
