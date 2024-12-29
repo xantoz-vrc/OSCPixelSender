@@ -92,6 +92,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     openbtn.set_callback({
         let mut fr = frame.clone();
+        let mut wn = wind.clone();
         move |_| {
             println!("Open button pressed");
 
@@ -145,6 +146,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // fr.set_image_scaled(Some(image));
                     // fr.set_label(path.to_string_lossy());
                     // fr.changed();
+
+                    wn.set_label(&path.to_string_lossy());
                 },
             };
         }
