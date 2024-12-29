@@ -10,6 +10,7 @@ debug = true
 [dependencies]
 fltk = "^1.4"
 image = "0.25.2"
+png = "0.17.13"
 quantizr = "1.4.2"
 rayon = "1.10.0"
 rosc = "0.10.1"
