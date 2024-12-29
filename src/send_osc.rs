@@ -411,11 +411,34 @@ pub fn send_osc(
             }
         };
 
+        #[allow(non_snake_case)]
+        const fn vNumberToChar(n: u8) -> u8 {
+            let result = if n <= 9 { b'0' + n } else { b'a' + n };
+            result & 0x7f
+        }
+
+        // Doing it C-style to avoid heap allocations in a case of
+        // premature optimization for the sake of learning myself some
+        // more esoteric rust. (The sane thing would've been to just
+        // return String)
+        #[allow(non_snake_case)]
+        fn vStr(n: u8) -> &'static str {
+            static mut BYTES: [u8; 2] = *b"V0"; // Consider thread local and Cell or RefCall
+
+            // Safe because the function result is always used
+            // immediately, and always in the same thread (maybe the
+            // entire function really should be marked unsafe too though?)
+            unsafe {
+                BYTES[1] = vNumberToChar(n);
+                // Using the addr_of! thing to suppress a warning about borrowing from mutable static
+                std::str::from_utf8(&*std::ptr::addr_of!(BYTES)).expect("UTF8 assured by always keeping BYTES as ASCII")
+            }
+        }
+
         let send_cmd = |cmd: &[u8]| -> Result<(), Box<dyn Error>> {
             for n in 0..BYTES_PER_SEND {
-                send_int(&format!("V{n:X}"),
-                         // cmd.get(n).unwrap_or(&0u8) as i32
-                         cmd.get(n).copied().unwrap_or_default() as i32
+                send_int(vStr(n as u8), // BYTES_PER_SEND never larger than u8
+                         cmd.get(n).copied().unwrap_or_default().into()
                 )?;
             }
             Ok(())
