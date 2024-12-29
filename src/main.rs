@@ -237,19 +237,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         thread::spawn(|| {
             match (
                 || -> Result<(), String> {
-                    let mut frame: Frame = app::widget_from_id("frame").unwrap();
-                    let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").unwrap();
-                    let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").unwrap();
-                    let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").unwrap();
-                    let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").unwrap();
-                    let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").unwrap();
-                    let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").unwrap();
+                    let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                    let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
+                    let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
+                    let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").ok_or("widget_from_id fail")?;
+                    let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").ok_or("widget_from_id fail")?;
+                    let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").ok_or("widget_from_id fail")?;
+                    let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
 
                     // Clone the path, we do not want to keep holding the
                     // lock. It can lead to deadlock with clearimage otherwise
                     // for one.
                     let path = {
-                        let imagepath_readguard = IMAGEPATH.read().unwrap();
+                        let imagepath_readguard = IMAGEPATH.read()
+                            .map_err(|err| format!("Error obtaining read lock for image path variable: {err:?}"))?;
                         let Some(ref path) = *imagepath_readguard else {
                             eprintln!("loadimage: No file selected/imagepath not set");
                             return Ok(());
@@ -292,7 +293,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let pathstr = path.to_string_lossy();
                     frame.set_label(&pathstr);
                     frame.changed();
-                    SEND.get().unwrap().send(Message::SetTitle(pathstr.to_string())).unwrap();
+                    SEND.get().ok_or("SEND not set")?
+                        .send(Message::SetTitle(pathstr.to_string()))
+                        .map_err(|err| format!("Send error: {err:?}"))?;
 
                     Ok(())
                 }
