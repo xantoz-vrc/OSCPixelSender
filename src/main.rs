@@ -50,6 +50,7 @@ pub enum BgMessage{
         multiplier: u8,
     },
     ClearImage,
+    SendOSC,
     Quit,
 }
 
@@ -229,6 +230,98 @@ fn print_err<T, E: Error>(result: Result<T, E>) -> () {
     }
 }
 
+fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Vec::<quantizr::Color>, msgs_per_second: f32) -> Result<(), Box<dyn Error>> {
+    extern crate rosc;
+
+    use rosc::encoder;
+    use rosc::{OscMessage, OscPacket, OscType};
+    use std::net::{SocketAddrV4, UdpSocket};
+    use std::str::FromStr;
+    use std::time::Duration;
+
+    let appmsg = appmsg.clone();
+    let indexes = indexes.clone();
+    let palette = palette.clone();
+
+    let host_addr = SocketAddrV4::from_str("127.0.0.1:9002")?;
+    let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
+    let sock = UdpSocket::bind(host_addr)?;
+
+    let sleep_time = 1.0f32/msgs_per_second;
+
+    const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
+
+    thread::spawn(move || -> () {
+
+        println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
+
+        match || -> Result<(), Box<dyn Error>> {
+            let duration = Duration::from_secs_f32(sleep_time);
+
+            let mut msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/Reset"),
+                args: vec![OscType::Bool(true)],
+            }))?;
+            sock.send_to(&msg_buf, to_addr)?;
+
+            thread::sleep(duration);
+
+            msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/Reset"),
+                args: vec![OscType::Bool(false)],
+            }))?;
+            sock.send_to(&msg_buf, to_addr)?;
+
+            thread::sleep(duration);
+
+            let mut clk: bool = false;
+            let chunks = indexes.chunks_exact(16);
+            let mut count: usize = 0;
+            let countmax: usize = chunks.len();
+            for index16 in chunks {
+                let mut n: u32 = 0;
+                for index in index16 {
+                    let valuename = format!("V{:X}", n);
+                    n += 1;
+                    let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                        addr: format!("{OSC_PREFIX}/{valuename}"),
+                        args: vec![OscType::Int(*index as i32)],
+                    }))?;
+                    sock.send_to(&msg_buf, to_addr)?;
+                }
+
+                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: format!("{OSC_PREFIX}/CLK"),
+                    args: vec![OscType::Bool(clk)],
+                }))?;
+                sock.send_to(&msg_buf, to_addr)?;
+
+                clk = !clk;
+                count += 1;
+
+                println!("Sent pixel chunk {}/{} {:.1}%",
+                         count, countmax, ((count as f64)/(countmax as f64))*100.0);
+
+                // TODO: Progress bar or something
+
+                thread::sleep(duration);
+            }
+
+            Ok(())
+        }() {
+            Ok(()) => (),
+            Err(err) => {
+                let msg = format!("send_osc background process failed: {err}");
+                eprintln!("{}", msg);
+                print_err(appmsg.send(AppMessage::Alert(msg)));
+                fltk::app::awake();
+            },
+        };
+    });
+
+    Ok(())
+}
+
 fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread::JoinHandle<()>, mq::MessageQueueSender<BgMessage>) {
     let (sender, receiver) = mq::mq::<BgMessage>();
 
@@ -237,6 +330,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
     let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
         let mut sharedimage: Option<SharedImage> = None;
+
+        let mut indexes_and_palette: Option<(Vec<u8>, Vec<quantizr::Color>)> = None;
 
         loop {
             let recvres = receiver.recv();
@@ -294,6 +389,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                         let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
+                        indexes_and_palette = None::<(Vec<u8>, Vec<quantizr::Color>)>;
+
                         sharedimage = None::<SharedImage>;
 
                         frame.set_image(None::<SharedImage>);
@@ -302,6 +399,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
                         palette_frame.set_image(None::<RgbImage>);
                         palette_frame.changed();
+
+                        // TODO: Disable Send OSC button
 
                         appmsg.send(AppMessage::SetTitle("Clear".to_string()))
                             .map_err(|err| format!("Send error: {err}"))?;
@@ -383,11 +482,17 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 palette_frame.changed();
                                 palette_frame.redraw();
                             }
+
+                            indexes_and_palette = Some((indexes, palette));
+                            // TODO: Enable Send OSC button
                         } else {
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                             frame.set_image(Some(image.clone()));
                             frame.changed();
                             frame.redraw();
+
+                            // TODO: there should be a fallback here maybe
+                            indexes_and_palette = None;
                         }
 
                         fltk::app::awake();
@@ -402,6 +507,23 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             eprintln!("{}", msg);
                             print_err(appmsg.send(AppMessage::Alert(msg)));
                             print_err(sender.send(BgMessage::ClearImage));
+                            fltk::app::awake();
+                        },
+                    };
+                },
+                BgMessage::SendOSC => {
+                    match || -> Result<(), String> {
+                        let (indexes, palette) = indexes_and_palette.as_ref()
+                            .ok_or("Indexes and palette not generated yet")?;
+                        send_osc(&appmsg, indexes, palette, 4.0f32)
+                            .map_err(|err| format!("send_osc failed: {err}"))?;
+                        Ok(())
+                    }() {
+                        Ok(()) => (),
+                        Err(errmsg) => {
+                            let msg = format!("SendOSC fail:\n{errmsg}");
+                            eprintln!("{}", msg);
+                            print_err(appmsg.send(AppMessage::Alert(msg)));
                             fltk::app::awake();
                         },
                     };
@@ -525,6 +647,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x\t|6x\t|7x\t|8x");
     multiplier_menubutton.set_value(4);
 
+    let mut send_osc_btn = Button::default().with_label("Send OSC");
+
     row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
@@ -538,6 +662,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&scaling_toggle, 30);
     col.fixed(&scale_input, 30);
     col.fixed(&multiplier_menubutton, 30);
+    col.fixed(&send_osc_btn, 50);
 
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
     let (joinhandle, bg) = start_background_process(&appmsg);
@@ -610,6 +735,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
             m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
             send_updateimage(&appmsg, &bg);
+        }
+    });
+
+    send_osc_btn.set_callback({
+        let bg = bg.clone();
+        let appmsg = appmsg.clone();
+        move |_| {
+            let result = bg.send(BgMessage::SendOSC);
+            if result.is_err() {
+                let msg = format!("Send OSC button error: {:?}", result);
+                eprintln!("{}", msg);
+                print_err(appmsg.send(AppMessage::Alert(msg)));
+                fltk::app::awake();
+            }
         }
     });
 
