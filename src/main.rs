@@ -856,8 +856,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let msg = format!("CreateWindow error: {err}");
                         eprintln!("{}", msg);
                         dialog::alert_default(&msg);
-
-                        // TODO: Kill the window if the callback failed
+                        // Something failed, delete the window
+                        Window::delete(wind);
                     }
                 },
             },
