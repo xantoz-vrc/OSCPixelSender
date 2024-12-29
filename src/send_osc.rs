@@ -7,9 +7,16 @@ use std::error::Error;
 use std::sync::mpsc;
 use std::string::ToString;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-// TODO: To cut down on repetition: Either use something like strum. Or make your own macro maybe?
+extern crate rosc;
+use rosc::encoder;
+use rosc::{OscMessage, OscPacket, OscType};
+use std::net::{SocketAddrV4, UdpSocket};
+use std::time::Duration;
 
+// TODO: To cut down on repetition in these enums: Either use something like strum. Or make your own macro maybe?
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Color {
     #[default]
@@ -95,36 +102,10 @@ pub struct SendOSCOpts {
 }
 */
 
-pub fn send_osc(
+fn create_progressbar_window(
     appmsg: &mpsc::Sender<AppMessage>,
-    indexes: &Vec::<u8>,
-    palette: &Vec::<quantizr::Color>,
-    width: u32,
-    height: u32,
-    pixfmt: PixFmt,
-    msgs_per_second: f64
-) -> Result<(), Box<dyn Error>> {
-    if indexes.len() != (width as usize) * (height as usize) {
-        return Err("width and height not matching length of indexes array".into());
-    }
-
-    extern crate rosc;
-
-    use rosc::encoder;
-    use rosc::{OscMessage, OscPacket, OscType};
-    use std::net::{SocketAddrV4, UdpSocket};
-    use std::str::FromStr;
-    use std::time::Duration;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-
-    let host_addr = SocketAddrV4::from_str("127.0.0.1:9002")?;
-    let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
-    let sock = UdpSocket::bind(host_addr)?;
-
-    let sleep_time = 1.0/msgs_per_second;
-
-    const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
+) -> Result<(Arc<AtomicBool>, fltk::window::Window, fltk::misc::Progress),
+            Box<dyn Error>> {
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel::<(fltk::window::Window, fltk::misc::Progress)>();
@@ -171,7 +152,33 @@ pub fn send_osc(
     })?;
     fltk::app::awake();
 
-    let (win, mut progressbar) = rx.recv()?;
+    let (win, progressbar) = rx.recv()?;
+
+    Ok((cancel_flag, win, progressbar))
+}
+
+pub fn send_osc(
+    appmsg: &mpsc::Sender<AppMessage>,
+    indexes: &Vec::<u8>,
+    palette: &Vec::<quantizr::Color>,
+    width: u32,
+    height: u32,
+    pixfmt: PixFmt,
+    msgs_per_second: f64,
+) -> Result<(), Box<dyn Error>> {
+    if indexes.len() != (width as usize) * (height as usize) {
+        return Err("width and height not matching length of indexes array".into());
+    }
+
+    let host_addr = SocketAddrV4::from_str("127.0.0.1:9002")?;
+    let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
+    let sock = UdpSocket::bind(host_addr)?;
+
+    let sleep_time = 1.0/msgs_per_second;
+
+    const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
+
+    let (cancel_flag, win, mut progressbar) = create_progressbar_window(appmsg)?;
 
     let appmsg = appmsg.clone();
     // let indexes: Vec<u8> = indexes.iter().copied().rev().collect();
