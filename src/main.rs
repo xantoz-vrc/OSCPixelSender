@@ -229,7 +229,7 @@ fn ignore_full<T: std::fmt::Debug>(result: Result<(), mpsc::TrySendError<T>>) ->
 }
 
 fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::SyncSender<BgMessage> {
-    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(0);
+    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(1);
 // fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
 //     let (sender, receiver) = mpsc::channel::<BgMessage>();
 
