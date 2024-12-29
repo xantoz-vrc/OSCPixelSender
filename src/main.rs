@@ -1,6 +1,6 @@
 pub mod mq;
 
-use fltk::{app, frame::Frame, enums::*, image::*, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
+use fltk::{app, frame::Frame, enums::*, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
 use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
@@ -107,10 +107,29 @@ fn scale_image(bytes: &[u8],
     let newimg = dimg.resize_to_fill(nwidth as u32, nheight as u32, imageops::FilterType::Lanczos3).into_rgba8();
 
     let (w, h): (u32, u32) = newimg.dimensions();
-    Ok((newimg.into_raw(), w as usize, h as usize))
+    Ok((newimg.into_raw(), w.try_into()?, h.try_into()?))
 }
 
-fn sharedimage_to_bytes(image : &SharedImage, grayscale : bool) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
+fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
+    use image::Pixel;
+
+    let mut newimg = image.clone();
+    let (w, h) = image.dimensions();
+
+    if grayscale {
+        for pixel in newimg.pixels_mut() {
+            let gray = pixel.to_luma_alpha();
+            let val = gray.0[0];
+            let alpha = gray.0[1];
+            *pixel = image::Rgba([val, val, val, alpha]);
+        }
+    }
+
+    Ok((newimg.into_raw(), w.try_into()?, h.try_into()?))
+}
+
+#[allow(dead_code)]
+fn sharedimage_to_bytes(image : &fltk::image::SharedImage, grayscale : bool) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
     // let bytes : Vec<u8> = image.to_rgb_image()?.convert(ColorDepth::L8)?.convert(ColorDepth::Rgba8)?.to_rgb_data();
 
     let mut rgbimage = image.to_rgb_image()?;
@@ -186,12 +205,17 @@ fn quantize_image(bytes : &Vec<u8>,
     Ok(result)
 }
 
+fn rgbaimage_to_fltk_rgbimage(image: &image::RgbaImage) -> Result<fltk::image::RgbImage, Box<dyn Error>> {
+    let (w, h) = image.dimensions();
+    Ok(fltk::image::RgbImage::new(image.as_raw(), w.try_into()?, h.try_into()?, ColorDepth::Rgba8)?)
+}
+
 // Turn the quantized thing back into RGB for display
-fn quantized_image_to_rgbimage(indexes : &Vec<u8>,
-                               palette : &Vec<quantizr::Color>,
-                               width : usize,
-                               height : usize,
-                               grayscale_output : bool) -> Result<RgbImage, Box<dyn Error>> {
+fn quantized_image_to_fltk_rgbimage(indexes : &Vec<u8>,
+                                    palette : &Vec<quantizr::Color>,
+                                    width : usize,
+                                    height : usize,
+                                    grayscale_output : bool) -> Result<fltk::image::RgbImage, Box<dyn Error>> {
     assert!(width * height == indexes.len());
 
     let mut fb: Vec<u8> = vec![0u8; indexes.len() * 4];
@@ -208,10 +232,10 @@ fn quantized_image_to_rgbimage(indexes : &Vec<u8>,
         }
     }
 
-    Ok(RgbImage::new(&fb, width as i32, height as i32, ColorDepth::Rgba8)?)
+    Ok(fltk::image::RgbImage::new(&fb, width as i32, height as i32, ColorDepth::Rgba8)?)
 }
 
-fn palette_to_rgbimage(palette: &[quantizr::Color], grayscale_output: bool) -> Result<RgbImage, Box<dyn Error>> {
+fn palette_to_fltk_rgbimage(palette: &[quantizr::Color], grayscale_output: bool) -> Result<fltk::image::RgbImage, Box<dyn Error>> {
     let mut fb: Vec<u8> = vec![0u8; palette.len() * 4];
     let width: i32 = 1;
     let height: i32 = palette.len().try_into()?;
@@ -229,7 +253,7 @@ fn palette_to_rgbimage(palette: &[quantizr::Color], grayscale_output: bool) -> R
         }
     }
 
-    Ok(RgbImage::new(&fb, width, height, ColorDepth::Rgba8)?)
+    Ok(fltk::image::RgbImage::new(&fb, width, height, ColorDepth::Rgba8)?)
 }
 
 fn print_err<T, E: Error>(result: Result<T, E>) -> () {
@@ -326,6 +350,7 @@ mod send_osc {
         }
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone)]
     pub struct SendOSCOpts {
         linesync: bool,
@@ -534,7 +559,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
     let sender_return = sender.clone();
 
     let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
-        let mut sharedimage: Option<SharedImage> = None;
+        let mut rgbaimage: Option<image::RgbaImage> = None;
 
         let mut indexes_and_palette: Option<(Vec<u8>, Vec<quantizr::Color>)> = None;
 
@@ -554,12 +579,12 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 },
                 BgMessage::LoadImage(path) => {
                     match || -> Result<(), String> {
-                        // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
-                        //       We should only convert to FLTK image format at the very end
-                        let image = SharedImage::load(&path)
-                            .map_err(|err| format!("Image load for image {path:?} failed: {err:}"))?;
+                        let image = image::ImageReader::open(&path)
+                            .map_err(|err| format!("Couldn't open image {path:?}: {err}"))?
+                            .decode()
+                            .map_err(|err| format!("Failed to decode image {path:?}: {err}"))?;
 
-                        sharedimage = Some(image);
+                        rgbaimage = Some(image.to_rgba8());
                         println!("Loaded image {path:?}");
 
                         let pathstr = path.to_string_lossy();
@@ -596,13 +621,13 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
                         indexes_and_palette = None::<(Vec<u8>, Vec<quantizr::Color>)>;
 
-                        sharedimage = None::<SharedImage>;
+                        rgbaimage = None;
 
-                        frame.set_image(None::<SharedImage>);
+                        frame.set_image(None::<fltk::image::RgbImage>);
                         frame.set_label("Clear");
                         frame.changed();
 
-                        palette_frame.set_image(None::<RgbImage>);
+                        palette_frame.set_image(None::<fltk::image::RgbImage>);
                         palette_frame.changed();
 
                         enable_send_osc_button(false)?;
@@ -636,7 +661,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     match || -> Result<(), String> {
                         enable_send_osc_button(false)?;
 
-                        let Some(ref image) = sharedimage else {
+                        let Some(ref image) = rgbaimage else {
                             eprintln!("No image loaded");
                             return Ok(());
                         };
@@ -648,8 +673,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             let mut width: usize;
                             let mut height: usize;
 
-                            (bytes, width, height) = sharedimage_to_bytes(&image, grayscale)
-                                .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
+                            (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale)
+                                .map_err(|err| format!("rgbaimage_to_bytes failed: {err:?}"))?;
 
                             if scaling {
                                 (bytes, width, height) = scale_image(&bytes, width, height, scale, scale)
@@ -663,7 +688,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 reorder_palette,
                             ).map_err(|err| format!("Quantization failed: {err:?}"))?;
 
-                            let mut rgbimage = quantized_image_to_rgbimage(
+                            let mut rgbimage = quantized_image_to_fltk_rgbimage(
                                 &indexes, &palette,
                                 width, height,
                                 grayscale_output,
@@ -683,7 +708,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 frame.changed();
                                 frame.redraw();
 
-                                let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output)
+                                let palette_rgbimage = palette_to_fltk_rgbimage(&palette, grayscale_output)
                                     .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
                                 palette_frame.set_image_scaled(Some(palette_rgbimage));
                                 palette_frame.changed();
@@ -694,7 +719,10 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             enable_send_osc_button(true)?;
                         } else {
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
-                            frame.set_image(Some(image.clone()));
+                            frame.set_image(Some(
+                                rgbaimage_to_fltk_rgbimage(image)
+                                    .map_err(|err| format!("Failed to convert from image::RgbaImage to fltk::image::RgbImage: {err}"))?
+                            ));
                             frame.changed();
                             frame.redraw();
 
