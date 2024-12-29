@@ -403,6 +403,66 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
     (joinhandle, sender_return)
 }
 
+fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSender::<BgMessage>, no_replace: bool) -> () {
+    match || -> Result<(), String> {
+        let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
+        let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
+        let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").ok_or("widget_from_id fail")?;
+        let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").ok_or("widget_from_id fail")?;
+        let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").ok_or("widget_from_id fail")?;
+        let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
+        let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
+        let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
+        let multiplier_menubutton: menu::MenuButton = app::widget_from_id("multiplier_menubutton").ok_or("widget_from_id fail")?;
+
+        let msg = BgMessage::UpdateImage{
+            no_quantize: no_quantize_toggle.is_checked(),
+            grayscale: grayscale_toggle.is_checked(),
+            grayscale_output: grayscale_output_toggle.is_checked(),
+            reorder_palette: reorder_palette_toggle.is_checked(),
+            scaling: scaling_toggle.is_checked(),
+            maxcolors: maxcolors_slider.value() as i32,
+            dithering: dithering_slider.value() as f32,
+            scale: {
+                let value = scale_input.value();
+                value.parse()
+                    .map_err(|err| format!("Couldn't parse scale {value:?}: {err}"))?
+            },
+            multiplier: {
+                match || -> Result<_, String> {
+                    let choice: String = multiplier_menubutton.choice()
+                        .ok_or("No choice selected in multiplier menubutton")?;
+                    let choice = choice.strip_suffix("x")
+                        .ok_or_else(|| format!("No x suffix in multiplier menubutton choice: {choice:?}"))?;
+                    let multiplier = choice.parse()
+                        .map_err(|err| format!("Couldn't parse multiplier {choice:?}: {err}"))?;
+                    Ok(multiplier)
+                }() {
+                    Ok(res) => res,
+                    Err(msg) => {
+                        eprintln!("{}", msg);
+                        1
+                    },
+                }
+            },
+        };
+        if no_replace {
+            bg.send(msg)
+        } else {
+            bg.send_or_replace_if(BgMessage::is_update, msg)
+        }.map_err(|err| format!("Send error: {err}"))?;
+
+        Ok(())
+    }() {
+        Ok(()) => (),
+        Err(errmsg) => {
+            let msg = format!("{}:\n{}", function!(), errmsg);
+            eprintln!("{}", msg);
+            print_err(appmsg.send(AppMessage::Alert(msg)));
+        },
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let app = app::App::default().with_scheme(app::Scheme::Gleam);
     // let app = app::App::default().with_scheme(app::Scheme::Oxy);
@@ -471,66 +531,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
     let (joinhandle, bg) = start_background_process(&appmsg);
 
-    fn updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSender::<BgMessage>, no_replace: bool) -> () {
-        match || -> Result<(), String> {
-            let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
-            let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
-            let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").ok_or("widget_from_id fail")?;
-            let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").ok_or("widget_from_id fail")?;
-            let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").ok_or("widget_from_id fail")?;
-            let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
-            let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
-            let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
-            let multiplier_menubutton: menu::MenuButton = app::widget_from_id("multiplier_menubutton").ok_or("widget_from_id fail")?;
-
-            let msg = BgMessage::UpdateImage{
-                no_quantize: no_quantize_toggle.is_checked(),
-                grayscale: grayscale_toggle.is_checked(),
-                grayscale_output: grayscale_output_toggle.is_checked(),
-                reorder_palette: reorder_palette_toggle.is_checked(),
-                scaling: scaling_toggle.is_checked(),
-                maxcolors: maxcolors_slider.value() as i32,
-                dithering: dithering_slider.value() as f32,
-                scale: {
-                    let value = scale_input.value();
-                    value.parse()
-                        .map_err(|err| format!("Couldn't parse scale {value:?}: {err}"))?
-                },
-                multiplier: {
-                    match || -> Result<_, String> {
-                        let choice: String = multiplier_menubutton.choice()
-                            .ok_or("No choice selected in multiplier menubutton")?;
-                        let choice = choice.strip_suffix("x")
-                            .ok_or_else(|| format!("No x suffix in multiplier menubutton choice: {choice:?}"))?;
-                        let multiplier = choice.parse()
-                            .map_err(|err| format!("Couldn't parse multiplier {choice:?}: {err}"))?;
-                        Ok(multiplier)
-                    }() {
-                        Ok(res) => res,
-                        Err(msg) => {
-                            eprintln!("{}", msg);
-                            1
-                        },
-                    }
-                },
-            };
-            if no_replace {
-                bg.send(msg)
-            } else {
-                bg.send_or_replace_if(BgMessage::is_update, msg)
-            }.map_err(|err| format!("Send error: {err}"))?;
-
-            Ok(())
-        }() {
-            Ok(()) => (),
-            Err(errmsg) => {
-                let msg = format!("{}:\n{}", function!(), errmsg);
-                eprintln!("{}", msg);
-                print_err(appmsg.send(AppMessage::Alert(msg)));
-            },
-        }
-    }
-
     openbtn.set_callback({
         let bg = bg.clone();
         let appmsg = appmsg.clone();
@@ -554,7 +554,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
 
-            updateimage(&appmsg, &bg, true);
+            send_updateimage(&appmsg, &bg, true);
         }
     });
 
@@ -573,13 +573,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
-    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
-    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
-    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
-    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
-    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
-    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
+    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
+    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
+    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
+    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
+    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
+    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
+    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
     scale_input.set_callback({
         let bg = bg.clone();
         let appmsg = appmsg.clone();
@@ -587,7 +587,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let value = i.value();
             println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
             if value.len() > 0 {
-                updateimage(&appmsg, &bg, false);
+                send_updateimage(&appmsg, &bg, false);
             } else {
                 i.set_value(SCALE_DEFAULT);
             }
@@ -599,7 +599,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |m| {
             println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
             m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
-            updateimage(&appmsg, &bg, false);
+o            send_updateimage(&appmsg, &bg, false);
         }
     });
 
