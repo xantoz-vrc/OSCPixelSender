@@ -244,32 +244,46 @@ pub fn send_osc(
             Ok(sock.send_to(&msg_buf, to_addr)?)
         };
 
+        let progress_message = |msg: String, progress: f64| -> () {
+            println!("{}", msg);
+            // Hack to avoid this thread getting held by the app main thread (currently the file choosers cause an issue for one)
+            thread::spawn({
+                let mut progressbar = progressbar.clone();
+                move || {
+                    progressbar.set_label(&msg);
+                    progressbar.set_value(progress);
+                    fltk::app::awake();
+                }
+            });
+        };
+
         println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
 
         match || -> Result<(), Box<dyn Error>> {
             let duration = Duration::from_secs_f64(sleep_time);
 
             // Reset CLK
+            progress_message("Reset CLK".to_string(), 0.0);
             send_bool("CLK", true)?;
             thread::sleep(duration);
-
             send_bool("CLK", false)?;
             thread::sleep(duration);
 
-            // Reset pixel
+            // Reset pixel pos
+            progress_message("Reset pixel pos".to_string(), 0.0);
             send_int("V0", 0)?;
             send_bool("Reset", true)?;
             send_bool("CLK", true)?;
             thread::sleep(duration);
 
             // Set BPP
-            println!("Set BPP");
             let bpp_val = match pixfmt {
                 PixFmt::Bpp1(_) => 192,
                 PixFmt::Bpp2(_) => 128,
                 PixFmt::Bpp4(_) => 64,
                 PixFmt::Bpp8(_) => 0,
             };
+            progress_message("Set BPP".to_string(), 0.0);
             let cmd: &[u8] = &[0b10000000, 2, 0, bpp_val, 0, 0, 0];
             for (n, val) in cmd.iter().enumerate() {
                 send_int(&format!("V{n:X}"), *val as i32)?;
@@ -278,7 +292,7 @@ pub fn send_osc(
             thread::sleep(duration);
 
             // Reset the reset bit
-            println!("Reset the reset bit");
+            progress_message("Clear the reset bit".to_string(), 0.0);
             send_bool("Reset", false)?;
             thread::sleep(duration);
 
@@ -307,15 +321,7 @@ pub fn send_osc(
                 let progress = ((count as f64)/(countmax as f64))*100.0;
                 let elapsed = now.elapsed();
                 let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count+1, countmax, progress, elapsed, eta);
-                println!("{}", msg);
-                thread::spawn({
-                    let mut progressbar = progressbar.clone();
-                    move || {
-                        progressbar.set_label(&msg);
-                        progressbar.set_value(progress);
-                        fltk::app::awake();
-                    }
-                });
+                progress_message(msg, progress);
 
                 thread::sleep(duration);
             }
