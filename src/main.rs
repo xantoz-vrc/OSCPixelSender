@@ -252,6 +252,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 match msg {
                     BgMessage::Quit => {
                         run = false;
+                        break;
                     },
                     BgMessage::LoadImage(path) => {
                         imagepath = Some(path);
