@@ -32,11 +32,6 @@ macro_rules! function {
     }}
 }
 
-#[allow(dead_code)]
-fn print_type_of<T>(_: &T) {
-    println!("{}", std::any::type_name::<T>());
-}
-
 pub enum AppMessage {
     SetTitle(String),
     Alert(String),

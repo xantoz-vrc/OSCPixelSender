@@ -22,10 +22,13 @@ pub fn error_alert(appmsg: &mpsc::Sender<AppMessage>, message: String) -> () {
     fltk::app::awake();
 }
 
-
 #[macro_export]
 macro_rules! static_assert {
     ($($tt:tt)*) => {
         const _: () = assert!($($tt)*);
     }
+}
+
+pub fn print_type_of<T>(_: &T) {
+    println!("{}", std::any::type_name::<T>());
 }
