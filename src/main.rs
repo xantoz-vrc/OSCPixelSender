@@ -658,11 +658,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     osc_pixfmt_choice.set_callback(|c| {
         println!("osc_pixfmt_choice: {:?}", c.choice())
     });
-    osc_pixfmt_choice.set_value(
-        osc_pixfmt_choice.find_index(
-            &send_osc::PixFmt::Bpp8(send_osc::Color::Grayscale).to_string()
-        )
-    );
+    osc_pixfmt_choice.set_value(0);
 
     row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
@@ -774,13 +770,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |_| {
             match || -> Result<(), String> {
                 bg.send(
-                    BgMessage::SendOSC{
+                    BgMessage::SendOSC {
                         speed: osc_speed_slider.value(),
-                        pixfmt: {
-                            osc_pixfmt_choice.choice()
-                                .ok_or("No PixFmt selected")?
-                                .parse()?
-                        },
+                        pixfmt: osc_pixfmt_choice.choice()
+                                    .ok_or("No PixFmt selected")?
+                                    .parse()?
                     }
                 ).map_err(|err| format!("bg.send error: {err}"))?;
                 Ok(())

@@ -20,8 +20,8 @@ use std::time::Duration;
 // TODO: To cut down on repetition in these enums: Either use something like strum. Or make your own macro maybe?
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Color {
-    #[default]
     Grayscale,
+    #[default]
     Indexed,
 }
 
@@ -45,6 +45,7 @@ impl ToString for Color {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PixFmt {
+    Auto(Color),
     Bpp1(Color),
     Bpp2(Color),
     Bpp4(Color),
@@ -53,7 +54,7 @@ pub enum PixFmt {
 
 impl Default for PixFmt {
     fn default() -> Self {
-        PixFmt::Bpp8(Color::Indexed)
+        PixFmt::Auto(Color::Indexed)
     }
 }
 
@@ -68,36 +69,41 @@ impl FromStr for PixFmt {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "Bpp1" => Ok(Self::Bpp1(Default::default())),
-            "Bpp2" => Ok(Self::Bpp2(Default::default())),
-            "Bpp4" => Ok(Self::Bpp4(Default::default())),
-            "Bpp8" => Ok(Self::Bpp8(Default::default())),
+            "Auto"            => Ok(Self::Auto(Default::default())),
+            "Bpp1"            => Ok(Self::Bpp1(Default::default())),
+            "Bpp2"            => Ok(Self::Bpp2(Default::default())),
+            "Bpp4"            => Ok(Self::Bpp4(Default::default())),
+            "Bpp8"            => Ok(Self::Bpp8(Default::default())),
+            "Auto(Indexed)"   => Ok(Self::Auto(Color::Indexed)),
+            "Auto(Grayscale)" => Ok(Self::Bpp1(Color::Grayscale)),
+            "Bpp1(Indexed)"   => Ok(Self::Bpp1(Color::Indexed)),
+            "Bpp2(Indexed)"   => Ok(Self::Bpp2(Color::Indexed)),
+            "Bpp4(Indexed)"   => Ok(Self::Bpp4(Color::Indexed)),
+            "Bpp8(Indexed)"   => Ok(Self::Bpp8(Color::Indexed)),
             "Bpp1(Grayscale)" => Ok(Self::Bpp1(Color::Grayscale)),
             "Bpp2(Grayscale)" => Ok(Self::Bpp2(Color::Grayscale)),
             "Bpp4(Grayscale)" => Ok(Self::Bpp4(Color::Grayscale)),
             "Bpp8(Grayscale)" => Ok(Self::Bpp8(Color::Grayscale)),
-            "Bpp1(Indexed)" => Ok(Self::Bpp1(Color::Indexed)),
-            "Bpp2(Indexed)" => Ok(Self::Bpp2(Color::Indexed)),
-            "Bpp4(Indexed)" => Ok(Self::Bpp4(Color::Indexed)),
-            "Bpp8(Indexed)" => Ok(Self::Bpp8(Color::Indexed)),
             _ => Err(format!("Couldn't parse as {}: {}", std::any::type_name::<Self>(), s)),
         }
     }
 }
 
 impl PixFmt {
-    pub const VALUES: [PixFmt; 8] = [
-        PixFmt::Bpp1(Color::Grayscale),
-        PixFmt::Bpp2(Color::Grayscale),
-        PixFmt::Bpp4(Color::Grayscale),
-        PixFmt::Bpp8(Color::Grayscale),
+    pub const VALUES: [PixFmt; 10] = [
+        PixFmt::Auto(Color::Indexed),
+        PixFmt::Auto(Color::Grayscale),
         PixFmt::Bpp1(Color::Indexed),
         PixFmt::Bpp2(Color::Indexed),
         PixFmt::Bpp4(Color::Indexed),
         PixFmt::Bpp8(Color::Indexed),
+        PixFmt::Bpp1(Color::Grayscale),
+        PixFmt::Bpp2(Color::Grayscale),
+        PixFmt::Bpp4(Color::Grayscale),
+        PixFmt::Bpp8(Color::Grayscale),
     ];
 
-    pub fn into_iter() -> core::array::IntoIter<PixFmt, 8> {
+    pub fn into_iter() -> core::array::IntoIter<PixFmt, 10> {
         Self::VALUES.into_iter()
     }
 }
@@ -195,13 +201,33 @@ pub fn send_osc(
     const PALETTECTRL_PIXEL: u8 = 3;
     const PALETTEWRIDX_PIXEL: u8 = 4;
 
+    // Get the bitdepth and whether we should be indexed or grayscale from pixfmt
+    // TODO: Perhaps it would've made more sense with a regular old struct for
+    //       pixfmt. then we wouldn't need to pick it apart like this.
+    let (bitdepth, color) = match options.pixfmt {
+        PixFmt::Auto(col) => (
+            match palette.len() {
+                ..=2     => 1,
+                ..=4     => 2,
+                ..=16    => 4,
+                ..=256   => 8,
+                _ => return Err("Too large palette".into()),
+            },
+            col,
+        ),
+        PixFmt::Bpp1(col) => (1, col),
+        PixFmt::Bpp2(col) => (2, col),
+        PixFmt::Bpp4(col) => (4, col),
+        PixFmt::Bpp8(col) => (8, col),
+    };
+
     // TODO: de-duplicate code with save_png
     // We need to do the conversion per line, because it might happen
     // that the width doesn't divide evenly when we are using 4bpp,
     // 2bpp or 1bpp modes. In that case each line must be padded out
     // some pixels.
-    let indexes: Vec<u8> = match options.pixfmt {
-        PixFmt::Bpp1(_) =>
+    let indexes: Vec<u8> = match bitdepth {
+        1 =>
             indexes
             .chunks_exact(width.try_into()?)
             .flat_map(|line|
@@ -216,7 +242,7 @@ pub fn send_osc(
                            p.get(6).map_or(0, |v| (v & 0b1) << 1) |
                            p.get(7).map_or(0, |v| (v & 0b1) << 0))
             ).collect(),
-        PixFmt::Bpp2(_) =>
+        2 =>
             indexes
             .chunks_exact(width.try_into()?)
             .flat_map(|line|
@@ -227,7 +253,7 @@ pub fn send_osc(
                            p.get(2).map_or(0, |v| (v & 0b11) << 2) |
                            p.get(3).map_or(0, |v| (v & 0b11) << 0))
             ).collect(),
-        PixFmt::Bpp4(_) =>
+        4 =>
             indexes
             .chunks_exact(width.try_into()?)
             .flat_map(|line|
@@ -236,15 +262,8 @@ pub fn send_osc(
                            p.get(0).map_or(0, |v| (v & 0b1111) << 4) |
                            p.get(1).map_or(0, |v| (v & 0b1111) << 0))
             ).collect(),
-        PixFmt::Bpp8(_) => indexes.clone(),
-    };
-
-    // TODO: Perhaps it would've made more sense with a regular old struct for pixfmt
-    let color = match options.pixfmt {
-        PixFmt::Bpp1(col) => col,
-        PixFmt::Bpp2(col) => col,
-        PixFmt::Bpp4(col) => col,
-        PixFmt::Bpp8(col) => col,
+        8 => indexes.clone(),
+        _ => panic!("This should be unreachable"),
     };
 
     let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg)?;
@@ -324,11 +343,12 @@ pub fn send_osc(
             progress_message("Set BPP".to_string(), 0.0);
             send_cmd(&[SETPIXEL_COMMAND, // Set data pixel command (when Reset is active)
                        BITDEPTH_PIXEL, 0, // BITDEPTH_PIXEL at 2,0 controls BPP (red channel)
-                       match options.pixfmt {
-                           PixFmt::Bpp1(_) => 192,
-                           PixFmt::Bpp2(_) => 128,
-                           PixFmt::Bpp4(_) => 64,
-                           PixFmt::Bpp8(_) => 0,
+                       match bitdepth {
+                           1 => 192,
+                           2 => 128,
+                           4 => 64,
+                           8 => 0,
+                           _ => panic!("This is unreachable"),
                        },
                        0, 0, 0])?;
             send_clk()?;
