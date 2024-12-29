@@ -154,6 +154,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut col = Flex::default_fill().column();
     col.set_margin(20);
+    col.set_spacing(20);
     let mut openbtn = Button::default().with_label("Open");
     let mut clearbtn = Button::default().with_label("Clear");
 
