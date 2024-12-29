@@ -263,12 +263,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // for one.
                     let path = {
                         let imagepath_readguard = imagepath.read().unwrap();
-                        let Some(path) = &*imagepath_readguard else {
+                        let Some(ref path) = *imagepath_readguard else {
                             eprintln!("loadimage: No file selected/imagepath not set");
                             return;
                         };
                         path.clone()
                     };
+
 
                     let loadresult = SharedImage::load(&path);
                     let Ok(image) = loadresult else {
