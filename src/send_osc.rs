@@ -9,6 +9,7 @@ use std::string::ToString;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::iter::Iterator;
 
 extern crate rosc;
 use rosc::encoder;
@@ -222,6 +223,14 @@ pub fn send_osc(
         PixFmt::Bpp8(_) => indexes.clone(),
     };
 
+    // TODO: Perhaps it would've made more sense with a regular old struct for pixfmt
+    let color = match pixfmt {
+        PixFmt::Bpp1(col) => col,
+        PixFmt::Bpp2(col) => col,
+        PixFmt::Bpp4(col) => col,
+        PixFmt::Bpp8(col) => col,
+    };
+
     let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg)?;
 
     let palette = palette.clone();
@@ -308,6 +317,75 @@ pub fn send_osc(
                        0, 0, 0])?;
             send_clk()?;
             thread::sleep(duration);
+
+            // Set palette
+            match color {
+                Color::Indexed => {
+                    progress_message("Set palette write mode".to_string(), 0.0);
+                    send_cmd(&[
+                        0x80, // Set data pixel command
+                        3, 0, // PALETTECTRL_PIXEL
+                        255,  // red channel: palette active
+                        255,  // green channel: palette write mode active
+                        0,    // blue channel: unused
+                        0,    // alpha channel: unused
+                    ])?;
+                    send_clk()?;
+                    thread::sleep(duration);
+
+                    progress_message("Reset palette write index".to_string(), 0.0);
+                    send_cmd(&[
+                        0x80, // Set data pixel command
+                        4, 0, // PALETTEWRIDX_PIXEL
+                        0,    // red channel: wridx 0
+                        0,    // green channel: unused
+                        0,    // blue channel: unused
+                        0,    // alpha channel: unused
+                    ])?;
+                    send_clk()?;
+                    thread::sleep(duration);
+
+                    progress_message("Sending palette".to_string(), 0.0);
+                    send_bool("Reset", false)?;
+                    // We send 5 colors at a time
+                    for chunk in palette.chunks(5) {
+                        let data: Vec<u8> = (0..5).flat_map(|i| {
+                            let color = chunk.get(i).unwrap_or(&quantizr::Color{r: 0, g: 0, b: 0, a: 0});
+                            [color.r, color.g, color.b]
+                        }).collect();
+                        debug_assert!(data.len() == 15);
+                        send_cmd(&data)?;
+                        send_clk()?;
+                        thread::sleep(duration);
+                    }
+
+                    progress_message("Disable palette write mode & Enable indexed colors".to_string(), 0.0);
+                    send_bool("Reset", true)?;
+                    send_cmd(&[
+                        0x80, // Set data pixel command
+                        3, 0, // PALETTECTRL_PIXEL
+                        255,  // red channel: palette active
+                        0,    // green channel: palette write mode inactive
+                        0,    // blue channel: unused
+                        0,    // alpha channel: unused
+                    ])?;
+                    send_clk()?;
+                    thread::sleep(duration);
+                },
+                Color::Grayscale => {
+                    progress_message("Set to grayscale mode".to_string(), 0.0);
+                    send_cmd(&[
+                        0x80, // Set data pixel command
+                        3, 0, // PALETTECTRL_PIXEL
+                        0,    // red channel: palette inactive
+                        0,    // green channel: palette write mode not active
+                        0,    // blue channel: unused/reset palette
+                        0,    // alpha unused
+                    ])?;
+                    send_clk()?;
+                    thread::sleep(duration);
+                }
+            }
 
             // Reset the reset bit
             progress_message("Clear the reset bit".to_string(), 0.0);
