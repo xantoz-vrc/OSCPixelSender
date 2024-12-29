@@ -1,5 +1,6 @@
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::collections::vec_deque::{VecDeque};
+use std::marker::{Send, Sync};
 
 pub type MessageQueueError<'a, T> = PoisonError<MutexGuard<'a, VecDeque<T>>>;
 
@@ -67,6 +68,9 @@ impl<T> MessageQueueSender<T> {
     }
 }
 
+unsafe impl<T: Send> Send for MessageQueueSender<T> {}
+unsafe impl<T: Send> Sync for MessageQueueSender<T> {}
+
 impl<T> MessageQueueReceiver<T> {
     pub fn drain(&self) -> Result<Box<[T]>, MessageQueueError<'_, T>> {
         let (lock, cvar) = &*self.queue;
@@ -75,3 +79,6 @@ impl<T> MessageQueueReceiver<T> {
         Ok(drain)
     }
 }
+
+unsafe impl<T: Send> Send for MessageQueueReceiver<T> {}
+// impl<T> !Sync for MessageQueueReceiver<T> {}
