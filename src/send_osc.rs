@@ -236,14 +236,12 @@ fn rle_encode(indexes: &[u8]) -> Vec<u8> {
                 result.push(*curval);
                 result.push(*curval);
                 result.push(*count);
-                println!("multi push: {value}x{count}");
                 *curval = value;
                 *count = 1u8;
             } else if *count == 1u8 {
                 result.push(*curval);
                 *curval = value;
                 *count = 1u8;
-                println!("single push: {value}");
             } else {
                 panic!("current_value is Some(x) but count == 0");
             }
