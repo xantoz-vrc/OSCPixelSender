@@ -277,7 +277,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                 };
 
                 win.set_callback({
-                    let mut cancel_cb = cancel_cb.clone();
+                    let cancel_cb = cancel_cb.clone();
                     move |_win| {
                         if app::event() == Event::Close {
                             println!("Send OSC window got Event::close");
@@ -288,7 +288,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
                 let mut cancel_btn = Button::default().with_label("Cancel");
                 cancel_btn.set_callback({
-                    let mut cancel_cb = cancel_cb.clone();
+                    let cancel_cb = cancel_cb.clone();
                     move |_btn| {
                         println!("Send OSC window cancel button pressed");
                         cancel_cb();
@@ -305,7 +305,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
     })?;
     fltk::app::awake();
 
-    let (mut win, mut progressbar) = rx.recv()?;
+    let (win, mut progressbar) = rx.recv()?;
 
     let appmsg = appmsg.clone();
     let indexes = indexes.clone();
