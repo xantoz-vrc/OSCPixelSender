@@ -51,9 +51,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
 
-    {
-        let fr1 = Rc::clone(&frame);
-        openbtn.set_callback(move |_| {
+    openbtn.set_callback({
+        let frc = Rc::clone(&frame);
+        move |_| {
             println!("Open button pressed");
 
             // let path = "F:/tw20230603-1.jpg";
@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 Ok(mut image) => {
                     println!("Loaded image {path:?}");
-                    let mut fr = fr1.borrow_mut();
+                    let mut fr = frc.borrow_mut();
 
                     println!("(before scale) w,h: {},{}", image.width(), image.height());
                     image.scale(256, 256, true, true);
@@ -89,21 +89,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // fr.changed();
                 },
             };
+        }
+    });
 
-        });
-    }
-
-    {
-        let fr2 : Rc::<RefCell::<Frame>> = Rc::clone(&frame);
-        clearbtn.set_callback(move |_| {
+    clearbtn.set_callback({
+        let frc : Rc::<RefCell::<Frame>> = Rc::clone(&frame);
+        move |_| {
             println!("Clear button pressed");
 
-            let mut fr = fr2.borrow_mut();
+            let mut fr = frc.borrow_mut();
             fr.set_image(None::<SharedImage>);
             fr.set_label("Clear");
             fr.changed();
-        });
-    }
+        }
+    });
 
     col.end();
     row.end();
