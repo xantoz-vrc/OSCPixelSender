@@ -108,6 +108,20 @@ impl PixFmt {
     }
 }
 
+fn duration_to_string(dur: Duration) -> String {
+    let total: u64 = dur.as_secs();
+    let mins: u64 = total/60;
+
+    if mins == 0 {
+        // Use the debug output for a very fine-grained output (two decimal places) when we are below a minute
+        format!("{:.2?}", dur)
+    } else {
+        // Above one minute we only care about whole seconds
+        let secs: u64 = total % 60;
+        format!("{mins} min {secs} s")
+    }
+}
+
 fn create_progressbar_window(
     appmsg: &mpsc::Sender<AppMessage>,
     text_string: Option<String>,
@@ -557,7 +571,7 @@ pub fn send_osc(
 
                 let progress = ((count as f64)/(countmax as f64))*100.0;
                 let elapsed = now.elapsed();
-                let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count+1, countmax, progress, elapsed, eta);
+                let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {}/{}", count+1, countmax, progress, duration_to_string(elapsed), duration_to_string(eta));
                 progress_message(msg, progress);
 
                 thread::sleep(duration);
