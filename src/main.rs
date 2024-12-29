@@ -269,9 +269,9 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             frame.redraw();
                         }
 
-                        fltk::app::awake();
                         appmsg.send(AppMessage::SetTitle(pathstr.to_string())).
                             map_err(|err| format!("Send error: {err}"))?;
+                        fltk::app::awake();
 
                         send_updateimage(&appmsg, &sender);
 
@@ -301,10 +301,9 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         palette_frame.set_image(None::<RgbImage>);
                         palette_frame.changed();
 
-                        fltk::app::redraw();
-
                         appmsg.send(AppMessage::SetTitle("Clear".to_string()))
                             .map_err(|err| format!("Send error: {err}"))?;
+                        fltk::app::awake();
 
                         Ok(())
                     }() {
