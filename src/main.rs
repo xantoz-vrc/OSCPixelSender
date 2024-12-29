@@ -265,7 +265,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                 let cancel_flag = Arc::clone(&cancel_flag);
                 AppMessage::CreateWindow(
                     400, 200, "Sending OSC".to_string(),
-                    Box::new(move |win| -> Result<(), Box<dyn Error>> {
+                    Box::new(move |_win| -> Result<(), Box<dyn Error>> {
                         let col = Flex::default_fill().column();
 
                         let mut progress = fltk::misc::Progress::default_fill();
