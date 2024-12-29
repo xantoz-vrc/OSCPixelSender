@@ -316,7 +316,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             return;
                         };
 
-                        let mut rgbresult = quantized_image_to_rgbimage(
+                        let rgbresult = quantized_image_to_rgbimage(
                             &indexes, &palette,
                             nwidth, nheight,
                             grayscale_output_toggle.is_checked(),
