@@ -33,6 +33,16 @@ macro_rules! function {
     }}
 }
 
+macro_rules! time_it {
+    ($context:literal, $($tt:tt)+) => {
+        let timer = std::time::Instant::now();
+        $(
+            $tt
+        )+
+            println!("{}: {:?}", $context, timer.elapsed());
+    }
+}
+
 pub enum AppMessage {
     SetTitle(String),
     Alert(String),
@@ -59,6 +69,7 @@ pub enum BgMessage{
         scale: u32,
         multiplier: u8,
         resize_type: ResizeType,
+        scaler_type: ScalerType,
     },
     ClearImage,
     SendOSC(send_osc::SendOSCOpts),
@@ -99,7 +110,20 @@ fn get_file(dialogtype: dialog::FileDialogType) -> Option<PathBuf> {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, EnumIter, EnumString, IntoStaticStr)]
+pub enum ScalerType {
+    #[default]
+    XZBilinear,
+    ImageCrateNearest,
+    ImageCrateTriangle,
+    ImageCrateCatmullRom,
+    ImageCrateGaussian,
+    ImageCrateLanczos3,
+}
 
+// Seems like maybe we could replace EnumString & IntoStaticStr with just the Display trait from strum?
+// Using .to_string() to stringify and String::from("foo") to parse
+// We could use VariantNames to get an array of strings instead of EnumIter
 #[derive(Debug, Clone, Default, PartialEq, EnumIter, EnumString, IntoStaticStr)]
 pub enum ResizeType {
     #[default]
@@ -214,22 +238,41 @@ fn scale_image_bilinear(src: &[u8],
 }
 
 // Image scaling using scaling from the image crate
-fn scale_image(bytes: Vec<u8>,
-               width: u32, height: u32,
-               nwidth: u32, nheight: u32,
-               resize: ResizeType) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
+fn scale_image_imagecrate(
+    bytes: Vec<u8>,
+    width: u32, height: u32,
+    nwidth: u32, nheight: u32,
+    resize: ResizeType,
+    filter_type: imageops::FilterType,
+) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
     assert!(bytes.len() == (width * height * 4) as usize); // RGBA format assumed
 
     let img = image::RgbaImage::from_raw(width as u32, height as u32, bytes).ok_or("bytes not big enough for width and height")?;
     let dimg = image::DynamicImage::from(img);
-    const FILTER_TYPE: imageops::FilterType = imageops::FilterType::Lanczos3;
     let newimg = match resize {
-        ResizeType::ToFill => dimg.resize_to_fill(nwidth as u32, nheight as u32, FILTER_TYPE),
-        ResizeType::ToFit  => dimg.resize(nwidth as u32, nheight as u32, FILTER_TYPE),
+        ResizeType::ToFill => dimg.resize_to_fill(nwidth, nheight, filter_type),
+        ResizeType::ToFit  =>         dimg.resize(nwidth, nheight, filter_type),
     }.into_rgba8();
 
     let (w, h): (u32, u32) = newimg.dimensions();
     Ok((newimg.into_raw(), w, h))
+}
+
+fn scale_image(
+    bytes: Vec<u8>,
+    width: u32, height: u32,
+    nwidth: u32, nheight: u32,
+    resize: ResizeType,
+    scaler_type: ScalerType,
+) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
+    match scaler_type {
+        ScalerType::XZBilinear           => scale_image_bilinear(&bytes, width, height, nwidth, nheight, resize),
+        ScalerType::ImageCrateNearest    => scale_image_imagecrate(bytes, width, height, nwidth, nheight, resize, imageops::FilterType::Nearest),
+        ScalerType::ImageCrateTriangle   => scale_image_imagecrate(bytes, width, height, nwidth, nheight, resize, imageops::FilterType::Triangle),
+        ScalerType::ImageCrateCatmullRom => scale_image_imagecrate(bytes, width, height, nwidth, nheight, resize, imageops::FilterType::CatmullRom),
+        ScalerType::ImageCrateGaussian   => scale_image_imagecrate(bytes, width, height, nwidth, nheight, resize, imageops::FilterType::Gaussian),
+        ScalerType::ImageCrateLanczos3   => scale_image_imagecrate(bytes, width, height, nwidth, nheight, resize, imageops::FilterType::Lanczos3),
+    }
 }
 
 fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> (Vec<u8>, u32, u32) {
@@ -586,6 +629,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     scale,
                     multiplier,
                     resize_type,
+                    scaler_type,
                 } => {
                     match || -> Result<(), String> {
                         enable_save_and_send_osc_button(false)?;
@@ -605,11 +649,10 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale);
 
                             if scaling {
-                                // (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type)
-                                //     .map_err(|err| format!("scale_image failed: {err:?}"))?;
-
-                                (bytes, width, height) = scale_image_bilinear(&bytes, width, height, scale, scale, resize_type)
-                                    .map_err(|err| format!("scale_image failed: {err:?}"))?;
+                                time_it!("scaling",
+                                         (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type, scaler_type)
+                                         .map_err(|err| format!("scale_image failed: {err:?}"))?;
+                                );
                             }
 
                             let (mut indexes, palette) = quantize_image(
@@ -727,6 +770,7 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
         let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
         let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
         let resize_type_choice: menu::Choice = app::widget_from_id("resize_type_choice").ok_or("widget_from_id fail")?;
+        let scaler_type_choice: menu::Choice = app::widget_from_id("scaler_type_choice").ok_or("widget_from_id fail")?;
         let multiplier_choice: menu::Choice = app::widget_from_id("multiplier_choice").ok_or("widget_from_id fail")?;
 
         let msg = BgMessage::UpdateImage{
@@ -774,6 +818,21 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
                     },
                 }
             },
+            scaler_type: {
+                match || -> Result<ScalerType, String> {
+                    let choice = scaler_type_choice.choice()
+                        .ok_or("No resize type selected")?;
+                    let parsed = choice.parse()
+                        .map_err(|err| format!("Couldn't parse resize type {choice:?}: {err}"))?;
+                    Ok(parsed)
+                }() {
+                    Ok(res) => res,
+                    Err(msg) => {
+                        error_alert(&appmsg, msg);
+                        Default::default()
+                    },
+                }
+            }
         };
 
         bg.send_or_replace_if(BgMessage::is_update, msg)
@@ -848,6 +907,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_id("resize_type_choice");
     resize_type_choice.add_choice(&ResizeType::iter().map(|e| e.into()).collect::<Vec<&'static str>>().join("|"));
     resize_type_choice.set_value(0);
+    let mut scaler_type_choice = menu::Choice::default()
+        .with_label("Scaler algorithm:")
+        .with_id("scaler_type_choice");
+    scaler_type_choice.add_choice(&ScalerType::iter().map(|e| e.into()).collect::<Vec<&'static str>>().join("|"));
+    scaler_type_choice.set_value(0);
 
     let mut multiplier_choice = menu::Choice::default()
         .with_label("Display scale multiplier:")
@@ -897,6 +961,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&scaling_toggle, toggle_size);
     col.fixed(&scale_input, input_size);
     col.fixed(&resize_type_choice, choice_size);
+    col.fixed(&scaler_type_choice, choice_size);
     col.fixed(&multiplier_choice, choice_size);
     col.fixed(&divider, 5);
     col.fixed(&send_osc_btn, button_size);
@@ -979,20 +1044,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     });
-    resize_type_choice.set_callback({
-        let bg = bg.clone();
-        let appmsg = appmsg.clone();
-        move |_| {
-            send_updateimage(&appmsg, &bg);
-        }
-    });
-    multiplier_choice.set_callback({
-        let bg = bg.clone();
-        let appmsg = appmsg.clone();
-        move |_| {
-            send_updateimage(&appmsg, &bg);
-        }
-    });
+    resize_type_choice.set_callback({ let bg = bg.clone(); let appmsg = appmsg.clone(); move |_| { send_updateimage(&appmsg, &bg); } });
+    scaler_type_choice.set_callback({ let bg = bg.clone(); let appmsg = appmsg.clone(); move |_| { send_updateimage(&appmsg, &bg); } });
+    multiplier_choice.set_callback({ let bg = bg.clone(); let appmsg = appmsg.clone(); move |_| { send_updateimage(&appmsg, &bg); } });
 
     send_osc_btn.set_callback({
         let bg = bg.clone();
