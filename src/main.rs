@@ -349,17 +349,32 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
+    fn openimage() -> () {
+        let Some(path) = get_file() else {
+            eprintln!("No file selected/cancelled");
+            return;
+        };
+
+        match || -> Result<(), String> {
+            let mut imagepath_lock = IMAGEPATH.write()
+                .map_err(|err| format!("{}: Error obtaining write lock on IMAGEPATH: {err:?}", function!()))?;
+            *imagepath_lock = Some(path);
+            Ok(())
+        }() {
+            Ok(()) => (),
+            Err(msg) => {
+                eprintln!("{}", msg);
+                send_noerr(AppMessage::Alert(msg));
+            },
+        };
+
+        loadimage();
+    }
+
     openbtn.set_callback({
-        move |_| {
+        |_| {
             println!("Open button pressed");
-
-            let Some(path) = get_file() else {
-                eprintln!("No file selected/cancelled");
-                return;
-            };
-
-            *(IMAGEPATH.write().unwrap()) = Some(path);
-            loadimage();
+            openimage();
         }
     });
 
