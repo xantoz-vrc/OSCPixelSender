@@ -17,6 +17,7 @@ use std::string::String;
 use image::{self, imageops};
 use std::sync::mpsc;
 use std::default::Default;
+use std::cmp::min;
 use strum::*;
 use strum_macros::*;
 
@@ -677,8 +678,13 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
 
 fn main() -> Result<(), Box<dyn Error>> {
     let app = app::App::default().with_scheme(app::Scheme::Gleam);
-    // let app = app::App::default().with_scheme(app::Scheme::Oxy);
-    let mut wind = Window::default().with_size(1600, 1000);
+    let screen_size = fltk::app::screen_size();
+    println!("Screen size; {}x{}", screen_size.0, screen_size.1);
+    let screen_size_int: (i32, i32) = (screen_size.0 as i32, screen_size.1 as i32);
+    let mut wind = Window::default().with_size(
+        min(1600, screen_size_int.0 - 64),
+        min(1000, screen_size_int.1 - 64)
+    );
 
     let mut row = Flex::default_fill().row();
     // row.set_margin(20);
