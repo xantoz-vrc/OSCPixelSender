@@ -643,7 +643,7 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
                 }() {
                     Ok(res) => res,
                     Err(msg) => {
-                        eprintln!("{}", msg);
+                        error_alert(&appmsg, msg);
                         1
                     },
                 }
@@ -658,7 +658,7 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
                 }() {
                     Ok(res) => res,
                     Err(msg) => {
-                        eprintln!("{}", msg);
+                        error_alert(&appmsg, msg);
                         Default::default()
                     },
                 }
