@@ -326,6 +326,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     match || -> Result<(), String> {
                         let image = image::ImageReader::open(&path)
                             .map_err(|err| format!("Couldn't open image {path:?}: {err}"))?
+                            .with_guessed_format()
+                            .map_err(|err| format!("Error when guessing format: {err}"))?
                             .decode()
                             .map_err(|err| format!("Failed to decode image {path:?}: {err}"))?;
 
