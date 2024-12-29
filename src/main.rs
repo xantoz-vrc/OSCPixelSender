@@ -684,7 +684,7 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
         let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
         let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
         let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
-        let multiplier_menubutton: menu::MenuButton = app::widget_from_id("multiplier_menubutton").ok_or("widget_from_id fail")?;
+        let multiplier_choice: menu::Choice = app::widget_from_id("multiplier_choice").ok_or("widget_from_id fail")?;
 
         let msg = BgMessage::UpdateImage{
             no_quantize: no_quantize_toggle.is_checked(),
@@ -701,10 +701,10 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
             },
             multiplier: {
                 match || -> Result<_, String> {
-                    let choice: String = multiplier_menubutton.choice()
-                        .ok_or("No choice selected in multiplier menubutton")?;
+                    let choice: String = multiplier_choice.choice()
+                        .ok_or("No multiplier choice selected")?;
                     let choice = choice.strip_suffix("x")
-                        .ok_or_else(|| format!("No x suffix in multiplier menubutton choice: {choice:?}"))?;
+                        .ok_or_else(|| format!("No x suffix in multiplier choice: {choice:?}"))?;
                     let multiplier = choice.parse()
                         .map_err(|err| format!("Couldn't parse multiplier {choice:?}: {err}"))?;
                     Ok(multiplier)
@@ -778,11 +778,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     scale_input.set_maximum_size(1024);
 
     // TODO: Is this even the right widget for this? Feels wierd to have to update the label.
-    let mut multiplier_menubutton = menu::MenuButton::default()
-        .with_label("Display scale multiplier: 5x")
-        .with_id("multiplier_menubutton");
-    multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x\t|6x\t|7x\t|8x");
-    multiplier_menubutton.set_value(4);
+    let mut multiplier_choice = menu::Choice::default()
+        .with_label("Display scale multiplier:")
+        .with_id("multiplier_choice");
+    multiplier_choice.add_choice("1x|2x|3x|4x|5x|6x|7x|8x");
+    multiplier_choice.set_value(4);
 
     // TODO: a separator to separate the OSC stuff
 
@@ -793,6 +793,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     osc_speed_slider.set_range(0.5, 20.0);
     osc_speed_slider.set_step(0.5, 1);
     osc_speed_slider.set_value(OSC_SPEED_DEFAULT);
+    let mut osc_pixfmt_menubutton = menu::MenuButton::default()
+        .with_label()
 
     row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
@@ -806,7 +808,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&dithering_slider, 30);
     col.fixed(&scaling_toggle, 30);
     col.fixed(&scale_input, 30);
-    col.fixed(&multiplier_menubutton, 30);
+    col.fixed(&multiplier_choice, 30);
     col.fixed(&send_osc_btn, 50);
     col.fixed(&osc_speed_slider, 30);
 
@@ -874,12 +876,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     });
-    multiplier_menubutton.set_callback({
+    multiplier_choice.set_callback({
         let bg = bg.clone();
         let appmsg = appmsg.clone();
         move |m| {
-            println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
-            m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
+            println!("multiplier_choice: {:?}", m.choice());
+            // m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
             send_updateimage(&appmsg, &bg);
         }
     });
