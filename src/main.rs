@@ -389,6 +389,55 @@ fn quantize_image(bytes : &[u8],
     Ok(result)
 }
 
+
+// Heuristic to find a background color value that hopefully will make
+// things compress well (as we currently lack a way of sending
+// non-square images to PixelsSendCRT)
+fn find_pad_value(bytes: &[u8],
+                  width: u32, height: u32) -> u8 {
+
+    let width: usize = width as usize;
+    let height: usize = height as usize;
+
+    println!("{}: bytes.len()={} width={width}, height={height}", function!(), bytes.len());
+
+    assert!(width != 0);
+    assert!(height != 0);
+    assert!(bytes.len() != 0);
+    assert!(width * height == bytes.len(), "width={width} * height={height} != bytes.len()={}", bytes.len()); // 8 bpp indexed image input
+
+    let mut count: [u32; 256] = [0; 256];
+
+    if width > height {
+        // Wide
+        for x in 0..width {
+            count[bytes[x + 0] as usize] += 1;
+            count[bytes[x + (height - 1)*width] as usize] += 1;
+        }
+    } else if width < height {
+        // Tall
+        for y in 0..height {
+            count[bytes[0 + y * width] as usize] += 1;
+            count[bytes[(width - 1) + y * width] as usize] += 1;
+        }
+    } else {
+        // Square
+        // Padding color doesn't matter. We won't be padded anyway
+        return 0;
+    }
+
+
+    let mut max_index: usize = 0;
+    for (i, &value) in count.iter().enumerate() {
+        if value > count[max_index] {
+            max_index = i;
+        }
+    }
+
+    debug_assert!(max_index < 256);
+    max_index as u8
+}
+
 // Pads the image after already being quantized (assumes 1 byte per pixel)
 // We do it on our own and in this manner because we wish to do it after we have quantized the image using quantizr
 fn pad_image(bytes: Vec<u8>,
@@ -698,8 +747,15 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 // to implement some fuzzy logic for picking the padding color.
 
                                 time_it!(
+                                    "find_pad_value",
+                                    let pad_value: u8 = find_pad_value(&indexes, width, height);
+                                );
+
+                                println!("pad_value={pad_value}");
+
+                                time_it!(
                                     "pad_image",
-                                    (indexes, width, height) = pad_image(indexes, 0u8, width, height, scale, scale);
+                                    (indexes, width, height) = pad_image(indexes, pad_value, width, height, scale, scale);
                                 );
                             }
 
