@@ -225,14 +225,39 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     static IMAGEPATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-    fn clearimage() {
-        let mut frame: Frame = app::widget_from_id("frame").unwrap();
+    fn try_send(msg: Message) -> Result<(), String> {
+        SEND.get().ok_or("SEND not set")?
+            .send(msg).map_err(|err| format!("Send error {err:?}"))?;
+        Ok(())
+    }
 
-        *(IMAGEPATH.write().unwrap()) = None;
-        frame.set_image(None::<SharedImage>);
-        frame.set_label("Clear");
-        frame.changed();
-        SEND.get().unwrap().send(Message::SetTitle("Clear".to_string())).unwrap();
+    fn send_noerr(msg: Message) -> () {
+        match try_send(msg) {
+            Ok(()) => (),
+            Err(msg) => eprintln!("try_send failed: {msg}"),
+        }
+    }
+
+    fn clearimage() {
+        match || -> Result<(), String> {
+            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+
+            let mut imagepath_lock = IMAGEPATH.write().map_err(|err| format!("Failed to lock IMAGEPATH for writing: {err}"))?;
+            *imagepath_lock = None;
+            frame.set_image(None::<SharedImage>);
+            frame.set_label("Clear");
+            frame.changed();
+
+            try_send(Message::SetTitle("Clear".to_string()))?;
+
+            Ok(())
+        }() {
+            Ok(()) => (),
+            Err(msg) => {
+                eprintln!("{}", msg);
+                send_noerr(Message::Alert(msg));
+            }
+        }
     }
 
     fn loadimage() {
@@ -248,6 +273,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").ok_or("widget_from_id fail")?;
                     let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").ok_or("widget_from_id fail")?;
                     let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
+                    let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
 
                     // Clone the path, we do not want to keep holding the
                     // lock. It can lead to deadlock with clearimage otherwise
@@ -304,9 +330,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let pathstr = path.to_string_lossy();
                     frame.set_label(&pathstr);
                     frame.changed();
-                    SEND.get().ok_or("SEND not set")?
-                        .send(Message::SetTitle(pathstr.to_string()))
-                        .map_err(|err| format!("Send error: {err:?}"))?;
+                    frame.redraw();
+                    fltk::app::redraw();
+                    try_send(Message::SetTitle(pathstr.to_string()))?;
+
+                    println!("Finished processing for {path:?}");
 
                     Ok(())
                 }
@@ -314,7 +342,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(()) => (),
                 Err(msg) => {
                     eprintln!("{}", msg);
-                    SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
+                    send_noerr(Message::Alert(msg));
                     clearimage();
                 },
             }
@@ -362,7 +390,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |panic_info| {
             // invoke the default handler, but then display an alert message
             orig_hook(panic_info);
-            SEND.get().unwrap().send(Message::Alert(format!("{panic_info}"))).unwrap();
+            send_noerr(Message::Alert(format!("{panic_info}")));
         }
     }));
 
