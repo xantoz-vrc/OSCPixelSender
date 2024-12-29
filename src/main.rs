@@ -333,10 +333,13 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
             thread::sleep(duration);
 
+            let now = std::time::Instant::now();
+
             let mut clk: bool = false;
             let chunks = indexes.chunks_exact(16);
             let mut count: usize = 0;
             let countmax: usize = chunks.len();
+            let eta = Duration::from_secs_f64((countmax as f64) * (sleep_time as f64));
             for index16 in chunks {
                 if cancel_flag.load(Ordering::Relaxed) {
                     println!("{}", "Send OSC thread cancelled");
@@ -364,7 +367,8 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                 count += 1;
 
                 let progress = ((count as f64)/(countmax as f64))*100.0;
-                let msg = format!("Sent pixel chunk {}/{} {:.1}%", count, countmax, progress);
+                let elapsed = now.elapsed();
+                let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count, countmax, progress, elapsed, eta);
                 println!("{}", msg);
                 progressbar.set_label(&msg);
                 progressbar.set_value(progress);
