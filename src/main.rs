@@ -210,19 +210,6 @@ fn palette_to_rgbimage(palette: &[quantizr::Color], grayscale_output: bool) -> R
     Ok(RgbImage::new(&fb, width, height, ColorDepth::Rgba8)?)
 }
 
-/*
-fn send_app(msg: AppMessage) -> Result<(), String> {
-    APPMSG_SEND.get().map_err(|err| format!("APPMSG_SENDER not initialized yet: {err}"))?
-        .send(msg).map_err(|err| format!("Send error: {err}"))?;
-    fltk::app::awake();
-    Ok(())
-}
-
-fn send_app_noerr(msg: AppMessage) -> () {
-    print_err(send_app(msg));
-}
-*/
-
 fn print_err<T, E: Error>(result: Result<T, E>) -> () {
     match result {
         Ok(_t) => (),
@@ -230,8 +217,19 @@ fn print_err<T, E: Error>(result: Result<T, E>) -> () {
     }
 }
 
+fn ignore_full<T: std::fmt::Debug>(result: Result<(), mpsc::TrySendError<T>>) -> Result<(), mpsc::TrySendError<T>> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(mpsc::TrySendError::Full(t)) => {
+            eprintln!("Channel full. Couldn't send: {:?}", t);
+            Ok(())
+        },
+        Err(err) => Err(err),
+    }
+}
+
 fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::SyncSender<BgMessage> {
-    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(1024);
+    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(0);
 // fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
 //     let (sender, receiver) = mpsc::channel::<BgMessage>();
 
@@ -481,7 +479,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 },
             };
-            bg.send(msg).map_err(|err| format!("Send error: {err}"))?;
+            ignore_full(bg.try_send(msg)).map_err(|err| format!("Send error: {err}"))?;
             Ok(())
         }() {
             Ok(()) => (),
@@ -505,7 +503,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
             match || -> Result<(), Box<dyn Error>> {
-                bg.send(BgMessage::LoadImage(path))?;
+                ignore_full(bg.try_send(BgMessage::LoadImage(path)))?;
                 Ok(())
             }() {
                 Ok(()) => (),
@@ -526,7 +524,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |_| {
             println!("Clear button pressed");
 
-            let sendresult = bg.send(BgMessage::ClearImage);
+            let sendresult = ignore_full(bg.try_send(BgMessage::ClearImage));
             if sendresult.is_err() {
                 let msg = format!("{:?}", sendresult);
                 eprintln!("{}", msg);
@@ -535,13 +533,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } }); 
-    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } }); 
-    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } }); 
-    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } }); 
-    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } }); 
-    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } }); 
-    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } }); 
+    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
+    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
+    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
+    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
+    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
+    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
+    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
     scale_input.set_callback({
         let bg = bg.clone();
         let appmsg = appmsg.clone();
