@@ -1,3 +1,9 @@
+Consider making the appmessage sender a global variable (use oncelock
+or so) so I don't have to pass it around everywhere. That should allow
+me to make some nice wrappers around sending AppMessages as well.
+Maybe the same for sending messages to the BG thread as well?
+
+
 Use fltk-builder for a nicer syntax? Also seems like we won't need to
 manage our references to widgets then as well, as we have been forced
 to do now.
