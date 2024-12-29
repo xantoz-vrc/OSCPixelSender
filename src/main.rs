@@ -131,6 +131,11 @@ pub enum ResizeType {
 
 // Home-cooked bilinear scaling
 // TODO: Gamma-correct version? (convert into linear color-space before scaling, then convert back)
+// This is actually not all that good for scaling down, but it
+// actually often ends up looking kind of retro in a good way, and
+// sometimes sligthly better than just nearest neighbour.
+// In line with that maybe a gamme-correct version wouldn't be looking quite as retro either?
+// TODO: halfpel (or even smaller?) movements to allow tweaking the resulting pixelation to achieve pleasing results with mouths and the likes?
 fn scale_image_bilinear(src: &[u8],
                         width: u32, height: u32,
                         nwidth: u32, nheight: u32,
