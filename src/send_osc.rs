@@ -414,7 +414,8 @@ pub fn send_osc(
 
         #[allow(non_snake_case)]
         const fn vNumberToChar(n: u8) -> u8 {
-            let result = if n <= 9 { b'0' + n } else { b'a' + n };
+            assert!((n as usize) < BYTES_PER_SEND);
+            let result = if n <= 9 { b'0' + n } else { b'A' + (n - 10) };
             result & 0x7f
         }
 
