@@ -16,6 +16,8 @@ use std::string::String;
 use image::{self, imageops};
 use std::sync::mpsc;
 use std::default::Default;
+use strum::*;
+use strum_macros::*;
 
 #[allow(unused_macros)]
 macro_rules! function {
@@ -59,6 +61,7 @@ pub enum BgMessage{
         scaling: bool,
         scale: u32,
         multiplier: u8,
+        resize_type: ResizeType,
     },
     ClearImage,
     SendOSC(send_osc::SendOSCOpts),
@@ -99,14 +102,27 @@ fn get_file(dialogtype: dialog::FileDialogType) -> Option<PathBuf> {
     }
 }
 
+
+#[derive(Debug, Clone, Default, PartialEq, EnumIter, EnumString, IntoStaticStr)]
+pub enum ResizeType {
+    #[default]
+    ToFill,
+    ToFit,
+}
+
 fn scale_image(bytes: Vec<u8>,
                width: u32, height: u32,
-               nwidth: u32, nheight: u32) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
+               nwidth: u32, nheight: u32,
+               resize: ResizeType) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
     assert!(bytes.len() == (width * height * 4) as usize); // RGBA format assumed
 
     let img = image::RgbaImage::from_raw(width as u32, height as u32, bytes).ok_or("bytes not big enough for width and height")?;
     let dimg = image::DynamicImage::from(img);
-    let newimg = dimg.resize_to_fill(nwidth as u32, nheight as u32, imageops::FilterType::Lanczos3).into_rgba8();
+    const FILTER_TYPE: imageops::FilterType = imageops::FilterType::Lanczos3;
+    let newimg = match resize {
+        ResizeType::ToFill => dimg.resize_to_fill(nwidth as u32, nheight as u32, FILTER_TYPE),
+        ResizeType::ToFit  => dimg.resize(nwidth as u32, nheight as u32, FILTER_TYPE),
+    }.into_rgba8();
 
     let (w, h): (u32, u32) = newimg.dimensions();
     Ok((newimg.into_raw(), w, h))
@@ -403,6 +419,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     scaling,
                     scale,
                     multiplier,
+                    resize_type,
                 } => {
                     match || -> Result<(), String> {
                         enable_save_and_send_osc_button(false)?;
@@ -423,7 +440,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 .map_err(|err| format!("rgbaimage_to_bytes failed: {err:?}"))?;
 
                             if scaling {
-                                (bytes, width, height) = scale_image(bytes, width, height, scale, scale)
+                                (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type)
                                     .map_err(|err| format!("scale_image failed: {err:?}"))?;
                             }
 
@@ -529,6 +546,7 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
         let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
         let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
         let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
+        let resize_type_choice: menu::Choice = app::widget_from_id("resize_type_choice").ok_or("widget_from_id fail")?;
         let multiplier_choice: menu::Choice = app::widget_from_id("multiplier_choice").ok_or("widget_from_id fail")?;
 
         let msg = BgMessage::UpdateImage{
@@ -558,6 +576,21 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
                     Err(msg) => {
                         eprintln!("{}", msg);
                         1
+                    },
+                }
+            },
+            resize_type: {
+                match || -> Result<ResizeType, String> {
+                    let choice = resize_type_choice.choice()
+                        .ok_or("No resize type selected")?;
+                    let parsed = choice.parse()
+                        .map_err(|err| format!("Couldn't parse resize type {choice:?}: {err}"))?;
+                    Ok(parsed)
+                }() {
+                    Ok(res) => res,
+                    Err(msg) => {
+                        eprintln!("{}", msg);
+                        Default::default()
                     },
                 }
             },
@@ -618,6 +651,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     scale_input.set_trigger(CallbackTrigger::EnterKey);
     scale_input.set_value(SCALE_DEFAULT);
     scale_input.set_maximum_size(5);
+    let mut resize_type_choice = menu::Choice::default()
+        .with_label("Scaling fit:")
+        .with_id("resize_type_choice");
+    resize_type_choice.add_choice(&ResizeType::iter().map(|e| e.into()).collect::<Vec<&'static str>>().join("|"));
 
     let mut multiplier_choice = menu::Choice::default()
         .with_label("Display scale multiplier:")
@@ -662,6 +699,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&dithering_slider, 30);
     col.fixed(&scaling_toggle, 30);
     col.fixed(&scale_input, 30);
+    col.fixed(&resize_type_choice, 30);
     col.fixed(&multiplier_choice, 30);
     col.fixed(&divider, 5);
     col.fixed(&send_osc_btn, 50);
@@ -742,6 +780,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 i.set_value(SCALE_DEFAULT);
             }
+        }
+    });
+    resize_type_choice.set_callback({
+        let bg = bg.clone();
+        let appmsg = appmsg.clone();
+        move |_| {
+            send_updateimage(&appmsg, &bg);
         }
     });
     multiplier_choice.set_callback({
