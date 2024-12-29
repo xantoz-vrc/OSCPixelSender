@@ -325,6 +325,12 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
             }))?;
             sock.send_to(&msg_buf, to_addr)?;
 
+            msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/CLK"),
+                args: vec![OscType::Bool(false)],
+            }))?;
+            sock.send_to(&msg_buf, to_addr)?;
+
             thread::sleep(duration);
 
             let mut clk: bool = false;
