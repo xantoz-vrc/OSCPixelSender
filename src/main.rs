@@ -784,7 +784,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     multiplier_choice.add_choice("1x|2x|3x|4x|5x|6x|7x|8x");
     multiplier_choice.set_value(4);
 
-    // TODO: a separator to separate the OSC stuff
+    let mut divider = Frame::default_fill();
+    divider.set_color(Color::Black);
+    divider.set_frame(FrameType::FlatBox);
 
     const OSC_SPEED_DEFAULT: f64 = 2.0;
     let mut send_osc_btn = Button::default().with_label("Send OSC").with_id("send_osc_btn");
@@ -809,6 +811,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&scaling_toggle, 30);
     col.fixed(&scale_input, 30);
     col.fixed(&multiplier_choice, 30);
+    col.fixed(&divider, 5);
     col.fixed(&send_osc_btn, 50);
     col.fixed(&osc_speed_slider, 30);
 
