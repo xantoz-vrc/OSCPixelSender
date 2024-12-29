@@ -29,7 +29,7 @@ fn print_type_of<T>(_: &T) {
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
+pub enum AppMessage {
     SetTitle(String),
     Alert(String),
 }
@@ -218,21 +218,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&dithering_slider, 30);
     col.fixed(&scaling_toggle, 20);
 
-    static SEND: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
-    let chan: (mpsc::Sender<Message>, mpsc::Receiver<Message>) = mpsc::channel::<Message>();
+    static SEND: OnceLock<mpsc::Sender<AppMessage>> = OnceLock::new();
+    let chan: (mpsc::Sender<AppMessage>, mpsc::Receiver<AppMessage>) = mpsc::channel::<AppMessage>();
     let recv = chan.1;
     SEND.set(chan.0).unwrap();
 
     static IMAGEPATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-    fn try_send(msg: Message) -> Result<(), String> {
+    fn try_send(msg: AppMessage) -> Result<(), String> {
         SEND.get().ok_or("SEND not set")?
             .send(msg).map_err(|err| format!("Send error {err:?}"))?;
         fltk::app::awake();
         Ok(())
     }
 
-    fn send_noerr(msg: Message) -> () {
+    fn send_noerr(msg: AppMessage) -> () {
         match try_send(msg) {
             Ok(()) => (),
             Err(msg) => eprintln!("try_send failed: {msg}"),
@@ -249,14 +249,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             frame.set_label("Clear");
             frame.changed();
 
-            try_send(Message::SetTitle("Clear".to_string()))?;
+            try_send(AppMessage::SetTitle("Clear".to_string()))?;
 
             Ok(())
         }() {
             Ok(()) => (),
             Err(msg) => {
                 eprintln!("{}", msg);
-                send_noerr(Message::Alert(msg));
+                send_noerr(AppMessage::Alert(msg));
             }
         }
     }
@@ -332,7 +332,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     frame.set_label(&pathstr);
                     frame.changed();
                     fltk::app::awake();
-                    try_send(Message::SetTitle(pathstr.to_string()))?;
+                    try_send(AppMessage::SetTitle(pathstr.to_string()))?;
 
                     println!("Finished processing for {path:?}");
 
@@ -342,7 +342,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(()) => (),
                 Err(msg) => {
                     eprintln!("{}", msg);
-                    send_noerr(Message::Alert(msg));
+                    send_noerr(AppMessage::Alert(msg));
                     clearimage();
                 },
             }
@@ -390,7 +390,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |panic_info| {
             // invoke the default handler, but then display an alert message
             orig_hook(panic_info);
-            send_noerr(Message::Alert(format!("{panic_info}")));
+            send_noerr(AppMessage::Alert(format!("{panic_info}")));
         }
     }));
 
@@ -399,8 +399,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     while app.wait() {
         match recv.try_recv() {
             Ok(msg) => match msg {
-                Message::Alert(s)    => dialog::alert_default(&s),
-                Message::SetTitle(s) => wind.set_label(&s),
+                AppMessage::Alert(s)    => dialog::alert_default(&s),
+                AppMessage::SetTitle(s) => wind.set_label(&s),
             },
             Err(mpsc::TryRecvError::Empty) => (),
             Err(err) => eprintln!("Channel error: {err}"),
