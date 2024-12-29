@@ -178,11 +178,6 @@ pub fn send_osc(
 
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
-    let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg)?;
-
-    let appmsg = appmsg.clone();
-    let palette = palette.clone();
-
     // TODO: de-duplicate code with save_png
     // We need to do the conversion per line, because it might happen
     // that the width doesn't divide evenly when we are using 4bpp,
@@ -227,6 +222,10 @@ pub fn send_osc(
         PixFmt::Bpp8(_) => indexes.clone(),
     };
 
+    let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg)?;
+
+    let palette = palette.clone();
+    let appmsg = appmsg.clone();
     thread::spawn(move || -> () {
 
         let send_bool = |var: &str, b: bool| -> Result<usize, Box<dyn Error>> {
