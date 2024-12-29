@@ -204,6 +204,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     dithering_slider.set_range(0.0, 1.0);
     dithering_slider.set_value(1.0);
 
+    let mut scaling_toggle = CheckButton::default().with_label("Enable scaling").with_id("scaling_toggle");
+    scaling_toggle.set_checked(true);
+
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
@@ -213,6 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&reorder_palette_toggle, 10);
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
+    col.fixed(&scaling_toggle, 20);
 
     static SEND: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
     let chan: (mpsc::Sender<Message>, mpsc::Receiver<Message>) = mpsc::channel::<Message>();
@@ -264,15 +268,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("Loaded image {path:?}");
 
                     if !no_quantize_toggle.is_checked() {
-                        let (bytes, width, height) = sharedimage_to_bytes(&image, grayscale_toggle.is_checked())
+                        let mut bytes: Vec<u8>;
+                        let mut width: usize;
+                        let mut height: usize;
+
+                        (bytes, width, height) = sharedimage_to_bytes(&image, grayscale_toggle.is_checked())
                             .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
 
-                        let (scaled_image, nwidth, nheight) = scale_image(&bytes, width, height, 128, 128)
-                            .map_err(|err| format!("scale_image failed: {err:?}"))?;
+                        if scaling_toggle.is_checked() {
+                            (bytes, width, height) = scale_image(&bytes, width, height, 128, 128)
+                                .map_err(|err| format!("scale_image failed: {err:?}"))?;
+                        }
 
                         let (indexes, palette) = quantize_image(
-                            &scaled_image,
-                            nwidth, nheight,
+                            &bytes, width, height,
                             maxcolors_slider.value() as i32,
                             dithering_slider.value() as f32,
                             reorder_palette_toggle.is_checked(),
@@ -280,11 +289,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                         let mut rgbimage = quantized_image_to_rgbimage(
                             &indexes, &palette,
-                            nwidth, nheight,
+                            width, height,
                             grayscale_output_toggle.is_checked(),
                         ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
 
-                        rgbimage.scale(1024, 1024, true, true); // Display larger
+                        if scaling_toggle.is_checked() {
+                            rgbimage.scale(512, 512, true, true); // Display pixelly image larger
+                        }
                         frame.set_image(Some(rgbimage));
                     } else {
                         frame.set_image(Some(image));
@@ -337,6 +348,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     reorder_palette_toggle.set_callback(|_| loadimage());
     maxcolors_slider.set_callback(|_| loadimage());
     dithering_slider.set_callback(|_| loadimage());
+    scaling_toggle.set_callback(|_| loadimage());
 
     col.end();
     row.end();
