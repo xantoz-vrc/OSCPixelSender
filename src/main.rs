@@ -1,5 +1,8 @@
 pub mod mq;
 mod send_osc;
+mod utility;
+
+use utility::print_err;
 
 use fltk::{app, frame::Frame, enums::*, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
 use std::error::Error;
@@ -256,16 +259,6 @@ fn palette_to_fltk_rgbimage(palette: &[quantizr::Color], grayscale_output: bool)
 
     Ok(fltk::image::RgbImage::new(&fb, width, height, ColorDepth::Rgba8)?)
 }
-
-fn print_err<T, E: Error>(result: Result<T, E>) -> () {
-    match result {
-        Ok(_t) => (),
-        Err(err) => eprintln!("{}", err),
-    }
-}
-
-
-
 
 fn enable_send_osc_button(active: bool) -> Result<(), String> {
     let mut send_osc_btn: Button = app::widget_from_id("send_osc_btn").ok_or("widget_from_id fail")?;

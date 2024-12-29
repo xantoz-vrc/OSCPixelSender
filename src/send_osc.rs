@@ -1,5 +1,10 @@
-use super::*;
+use crate::AppMessage;
+use crate::utility::print_err;
 
+use fltk::prelude::*;
+use std::thread;
+use std::error::Error;
+use std::sync::mpsc;
 use std::string::ToString;
 use std::str::FromStr;
 
@@ -109,7 +114,7 @@ pub fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette:
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    let (tx, rx) = mpsc::channel::<(Window, fltk::misc::Progress)>();
+    let (tx, rx) = mpsc::channel::<(fltk::window::Window, fltk::misc::Progress)>();
 
     // New windows need to be created on the main thread, so we message the main thread
     appmsg.send({
@@ -117,7 +122,7 @@ pub fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette:
         AppMessage::CreateWindow(
             400, 200, "Sending OSC".to_string(),
             Box::new(move |win| -> Result<(), Box<dyn Error>> {
-                let col = Flex::default_fill().column();
+                let col = fltk::group::Flex::default_fill().column();
 
                 let mut progressbar = fltk::misc::Progress::default_fill();
                 progressbar.set_minimum(0.0);
@@ -127,14 +132,14 @@ pub fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette:
                 win.set_callback({
                     let cancel_flag = Arc::clone(&cancel_flag);
                     move |_win| {
-                        if app::event() == Event::Close {
+                        if fltk::app::event() == fltk::enums::Event::Close {
                             println!("Send OSC window got Event::close");
                             cancel_flag.store(true, Ordering::Relaxed);
                         }
                     }
                 });
 
-                let mut cancel_btn = Button::default().with_label("Cancel");
+                let mut cancel_btn = fltk::button::Button::default().with_label("Cancel");
                 cancel_btn.set_callback({
                     let cancel_flag = Arc::clone(&cancel_flag);
                     move |_btn| {
