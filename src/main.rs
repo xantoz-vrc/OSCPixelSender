@@ -716,7 +716,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x\t|6x\t|7x\t|8x");
     multiplier_menubutton.set_value(4);
 
-    let mut send_osc_btn = Button::default().with_label("Send OSC");
+    let mut send_osc_btn = Button::default().with_label("Send OSC").with_id("send_osc_button");
 
     row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
