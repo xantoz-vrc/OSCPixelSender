@@ -171,9 +171,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
-    col.fixed(&grayscale_toggle, 30);
-    col.fixed(&grayscale_output_toggle, 30);
-    col.fixed(&reorder_palette_toggle, 30);
+    col.fixed(&grayscale_toggle, 10);
+    col.fixed(&grayscale_output_toggle, 10);
+    col.fixed(&reorder_palette_toggle, 10);
     col.fixed(&maxcolors_slider, 30);
 
     let imagepath_arc : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
