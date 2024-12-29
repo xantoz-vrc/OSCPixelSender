@@ -1,4 +1,4 @@
-use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::Button, dialog};
+use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, dialog};
 use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
@@ -159,6 +159,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut openbtn = Button::default().with_label("Open");
     let mut clearbtn = Button::default().with_label("Clear");
 
+    let grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting");
+    let grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale");
+
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
@@ -168,8 +171,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut wn = wind.clone();
         move |_| {
             println!("Open button pressed");
-
-            // let path = "F:/tw20230603-1.jpg";
 
             let Some(path) = get_file() else {
                 eprintln!("No file selected");
@@ -190,7 +191,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             //image.scale(256, 256, true, true);
             println!("(after scale) w,h: {},{}", image.width(), image.height());
 
-            let bresult = sharedimage_to_bytes(&image, false);
+            let bresult = sharedimage_to_bytes(&image, grayscale_toggle.is_checked());
             let Ok((bytes, width, height)) = bresult else {
                 let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                 eprintln!("{}", msg);
@@ -198,7 +199,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
 
-            let qresult = quantize_image(&bytes, width, height, 16, false);
+            let qresult = quantize_image(&bytes, width, height, 16, grayscale_output_toggle.is_checked());
             let Ok(rgbimage) = qresult else {
                 let msg = format!("Quantization failed: {qresult:?}");
                 eprintln!("{}", msg);
