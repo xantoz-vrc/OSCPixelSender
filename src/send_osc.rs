@@ -178,7 +178,7 @@ pub fn send_osc(
 
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
-    let (cancel_flag, win, mut progressbar) = create_progressbar_window(appmsg)?;
+    let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg)?;
 
     let appmsg = appmsg.clone();
     let palette = palette.clone();
@@ -309,10 +309,14 @@ pub fn send_osc(
                 let elapsed = now.elapsed();
                 let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count+1, countmax, progress, elapsed, eta);
                 println!("{}", msg);
-                progressbar.set_label(&msg);
-                progressbar.set_value(progress);
-
-                fltk::app::awake();
+                thread::spawn({
+                    let mut progressbar = progressbar.clone();
+                    move || {
+                        progressbar.set_label(&msg);
+                        progressbar.set_value(progress);
+                        fltk::app::awake();
+                    }
+                });
 
                 thread::sleep(duration);
             }
