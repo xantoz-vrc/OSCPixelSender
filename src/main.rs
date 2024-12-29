@@ -223,7 +223,7 @@ fn print_err<T, E: Error>(result: Result<T, E>) -> () {
 }
 
 fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::SyncSender<BgMessage> {
-    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(10);
+    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(0);
 // fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
 //     let (sender, receiver) = mpsc::channel::<BgMessage>();
 
