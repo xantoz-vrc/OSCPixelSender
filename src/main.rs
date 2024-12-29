@@ -61,35 +61,40 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
         let (r,g,b) = (c.r as i32, c.g as i32, c.b as i32);
         r + g + b
     });
-    // dbg!(&permutation);
+    dbg!(&permutation);
 
-    /*
     let new_palette : Vec<quantizr::Color> =
         permutation.iter()
         .map(|&i| palette.entries[i])
         .collect();
-    */
 
+/*
     let mut new_palette : Vec<quantizr::Color> = vec![quantizr::Color { r: 0, g: 0, b: 0, a: 0}; palette.count as usize];
     for (old_idx, &new_idx) in permutation.iter().enumerate() {
-        new_palette[new_idx] = palette.entries[old_idx];
+        //new_palette[new_idx] = palette.entries[old_idx];
+        new_palette[old_idx] = palette.entries[new_idx];
     }
+*/
 
     // dbg!(palette.entries[0..(palette.count as usize)]);
     // dbg!(new_palette);
 
-    // dbg!(palette.entries[0..(palette.count as usize)].iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
-    // dbg!(new_palette.iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
+    dbg!(palette.entries[0..(palette.count as usize)].iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
+    dbg!(new_palette.iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
 
     // for (new_idx, old_idx) in permutation.iter().enumerate() {
     //     palette.entries.swap(new_idx, *old_idx);
     // }
 
     // Trying out fancy rayon parallel iterators
+    // let new_indexes : Vec<u8> = indexes.par_iter().map(
+    //     |ic| permutation[*ic as usize] as u8
+    // ).collect();
     let new_indexes : Vec<u8> = indexes.par_iter().map(
-        |ic| permutation[*ic as usize] as u8
+        |ic| permutation.iter().position(|&r| r == *ic as usize).unwrap_or_default() as u8
     ).collect();
 
+    //(new_indexes.deref(), new_palette.deref())
     (new_indexes, new_palette)
 }
 
