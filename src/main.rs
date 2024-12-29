@@ -191,18 +191,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut openbtn = Button::default().with_label("Open");
     let mut clearbtn = Button::default().with_label("Clear");
 
-    let mut no_quantize_toggle = CheckButton::default().with_label("Disable quantization");
-    let mut grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting");
-    let mut grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale");
-    let mut reorder_palette_toggle = CheckButton::default().with_label("Sort palette");
+    let mut no_quantize_toggle = CheckButton::default().with_label("Disable quantization").with_id("no_quantize_toggle");
+    let mut grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting").with_id("grayscale_toggle");
+    let mut grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale").with_id("grayscale_output_toggle");
+    let mut reorder_palette_toggle = CheckButton::default().with_label("Sort palette").with_id("reorder_palette_toggle");
     reorder_palette_toggle.set_checked(true);
 
-    let mut maxcolors_slider = HorValueSlider::default().with_label("Max Colors");
+    let mut maxcolors_slider = HorValueSlider::default().with_label("Max Colors").with_id("maxcolors_slider");
     maxcolors_slider.set_range(2.0, 256.0);
     maxcolors_slider.set_step(1.0, 1);
     maxcolors_slider.set_value(16.0);
 
-    let mut dithering_slider = HorValueSlider::default().with_label("Dithering Level");
+    let mut dithering_slider = HorValueSlider::default().with_label("Dithering Level").with_id("dithering_slider");
     dithering_slider.set_range(0.0, 1.0);
     dithering_slider.set_value(1.0);
 
@@ -234,26 +234,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let loadimage = Arc::new(Mutex::new({
-        let no_quantize_toggle = no_quantize_toggle.clone();
-        let grayscale_toggle = grayscale_toggle.clone();
-        let grayscale_output_toggle = grayscale_output_toggle.clone();
-        let reorder_palette_toggle = reorder_palette_toggle.clone();
-        let maxcolors_slider = maxcolors_slider.clone();
-        let dithering_slider = dithering_slider.clone();
-
         move || {
             println!("loadimage called");
 
             thread::spawn({
-                let no_quantize_toggle = no_quantize_toggle.clone();
-                let grayscale_toggle = grayscale_toggle.clone();
-                let grayscale_output_toggle = grayscale_output_toggle.clone();
-                let reorder_palette_toggle = reorder_palette_toggle.clone();
-                let maxcolors_slider = maxcolors_slider.clone();
-                let dithering_slider = dithering_slider.clone();
-
                 move || {
                     let mut frame: Frame = app::widget_from_id("frame").unwrap();
+                    let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").unwrap();
+                    let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").unwrap();
+                    let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").unwrap();
+                    let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").unwrap();
+                    let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").unwrap();
+                    let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").unwrap();
 
                     // Clone the path, we do not want to keep holding the
                     // lock. It can lead to deadlock with clearimage otherwise
