@@ -51,7 +51,7 @@ pub fn mq<T>() -> (MessageQueueSender<T>, MessageQueueReceiver<T>) {
     (MessageQueueSender::<T> { queue: q }, MessageQueueReceiver::<T> { queue: q2 })
 }
 
-impl<T> MessageQueueSender<T> {
+impl<T: std::fmt::Debug> MessageQueueSender<T> {
     pub fn send(&self, val: T) -> Result<(), SendError<T>> {
         let lockres = self.queue.0.lock();
         let Ok(mut q) = lockres else {
@@ -60,6 +60,8 @@ impl<T> MessageQueueSender<T> {
 
         q.push_back(val);
         self.queue.1.notify_one();
+
+        dbg!(&*q);
 
         Ok(())
     }
@@ -79,6 +81,8 @@ impl<T> MessageQueueSender<T> {
                 self.queue.1.notify_one();
             },
         }
+
+        dbg!(&*q);
 
         Ok(())
     }
@@ -100,6 +104,8 @@ impl<T> MessageQueueSender<T> {
                 self.queue.1.notify_one();
             },
         }
+
+        dbg!(&*q);
 
         Ok(())
     }
