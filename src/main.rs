@@ -129,7 +129,7 @@ fn scale_image(bytes: Vec<u8>,
     Ok((newimg.into_raw(), w, h))
 }
 
-fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
+fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> (Vec<u8>, u32, u32) {
     use image::Pixel;
 
     let mut newimg = image.clone();
@@ -144,7 +144,7 @@ fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> Result<(Vec<
         }
     }
 
-    Ok((newimg.into_raw(), w, h))
+    (newimg.into_raw(), w, h)
 }
 
 #[allow(dead_code)]
@@ -499,8 +499,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             let mut width: u32;
                             let mut height: u32;
 
-                            (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale)
-                                .map_err(|err| format!("rgbaimage_to_bytes failed: {err:?}"))?;
+                            (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale);
 
                             if scaling {
                                 (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type)
