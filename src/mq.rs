@@ -11,14 +11,15 @@ pub struct MessageQueueSender<T> {
 
 #[derive(Debug)]
 pub struct MessageQueueReceiver<T> {
-    queue: Arc<(Mutex<VecDeque<T>>, Condvar)>
+    queue: Arc<(Mutex<VecDeque<T>>, Condvar)>,
+    unconsumed: Option<VecDeque<T>>,
 }
 
 pub fn mq<T>() -> (MessageQueueSender<T>, MessageQueueReceiver<T>) {
     let q = Arc::new((Mutex::new(VecDeque::<T>::new()), Condvar::new()));
     let q2 = Arc::clone(&q);
 
-    (MessageQueueSender::<T> { queue: q }, MessageQueueReceiver::<T> { queue: q2 })
+    (MessageQueueSender::<T> { queue: q }, MessageQueueReceiver::<T> { queue: q2, unconsumed: None })
 }
 
 impl<T> MessageQueueSender<T> {
@@ -72,11 +73,42 @@ unsafe impl<T: Send> Send for MessageQueueSender<T> {}
 unsafe impl<T: Send> Sync for MessageQueueSender<T> {}
 
 impl<T> MessageQueueReceiver<T> {
-    pub fn drain(&self) -> Result<Box<[T]>, MessageQueueError<'_, T>> {
+    pub fn drain(&mut self) -> Result<Box<[T]>, MessageQueueError<'_, T>> {
         let (lock, cvar) = &*self.queue;
         let mut guard = cvar.wait_while(lock.lock()?, |vd| { vd.is_empty() })?;
-        let drain = guard.drain(..).collect();
-        Ok(drain)
+        match self.unconsumed.take() {
+            Some(mut vd) => {
+                let drain1 = vd.drain(..);
+                let drain2 = guard.drain(..);
+                let drain = drain1.chain(drain2).collect();
+                Ok(drain)
+            },
+            None => {
+                let drain = guard.drain(..).collect();
+                Ok(drain)
+            },
+        }
+    }
+
+    pub fn recv(&mut self) -> Result<T, MessageQueueError<'_, T>> {
+        match self.unconsumed {
+            Some(ref mut u) => {
+                if let Some(next) = u.pop_front() {
+                    Ok(next)
+                } else {
+                    self.unconsumed = None;
+                    self.recv()
+                }
+            },
+            None => {
+                let (lock, cvar) = &*self.queue;
+                let mut guard = cvar.wait_while(lock.lock()?, |vd| { vd.is_empty() })?;
+                let mut drain = guard.drain(..);
+                let ret = drain.next().unwrap();
+                self.unconsumed = Some(drain.collect());
+                Ok(ret)
+            }
+        }
     }
 }
 

@@ -12,8 +12,9 @@ pub enum Message {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let (tx, rx) = mq::mq::<Message>();
+    let (tx, mut rx) = mq::mq::<Message>();
 
+/*
     let _handle1 = thread::spawn({
         move || -> () {
             let mut clear_count: i32 = 0;
@@ -39,6 +40,34 @@ fn main() -> Result<(), Box<dyn Error>> {
                             run = false;
                         },
                     }
+                }
+            }
+        }
+    });
+*/
+
+    let _handle1 = thread::spawn({
+        move || -> () {
+            let mut clear_count: i32 = 0;
+            let mut run: bool = true;
+
+            while run {
+                let msg = rx.recv().unwrap();
+                match msg {
+                    Message::Update(n) => {
+                        println!("Processing update #{n}");
+                        // thread::sleep(Duration::from_secs_f64((n as f64)/10.0));
+                        thread::sleep(Duration::from_secs(2));
+                    },
+                    Message::Clear => {
+                        clear_count += 1;
+                        println!("Clear #{}!", clear_count);
+                        thread::sleep(Duration::from_secs_f64(0.4));
+                    },
+                    Message::Stop => {
+                        println!("Got stop message. Stopping thread.");
+                        run = false;
+                    },
                 }
             }
         }
