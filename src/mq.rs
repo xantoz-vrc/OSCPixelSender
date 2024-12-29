@@ -73,11 +73,8 @@ impl<T> MessageQueueSender<T> {
     }
 
     pub fn is_empty(&self) -> Result<bool, SendError<()>> {
-        let q = match self.queue.0.lock() {
-            Ok(q) => q,
-            Err(err) => return Err(SendError::<()> { data: (), message: format!("Error locking mutex: {err}") }),
-        };
-
+        let q = self.queue.0.lock()
+            .map_err(|err| SendError::<()> { data: (), message: format!("Error locking mutex: {err}") })?;
         Ok(q.is_empty())
     }
 }
