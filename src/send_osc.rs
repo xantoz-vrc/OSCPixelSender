@@ -293,14 +293,16 @@ pub fn send_osc(
             thread::sleep(duration);
 
             // Set BPP
-            let bpp_val = match pixfmt {
-                PixFmt::Bpp1(_) => 192,
-                PixFmt::Bpp2(_) => 128,
-                PixFmt::Bpp4(_) => 64,
-                PixFmt::Bpp8(_) => 0,
-            };
             progress_message("Set BPP".to_string(), 0.0);
-            send_cmd(&[0b10000000, 2, 0, bpp_val, 0, 0, 0])?;
+            send_cmd(&[0x80, // Set data pixel command (when Reset is active)
+                       2, 0, // BITDEPTH_PIXEL at 2,0 controls BPP (red channel)
+                       match pixfmt {
+                           PixFmt::Bpp1(_) => 192,
+                           PixFmt::Bpp2(_) => 128,
+                           PixFmt::Bpp4(_) => 64,
+                           PixFmt::Bpp8(_) => 0,
+                       },
+                       0, 0, 0])?;
             send_clk()?;
             thread::sleep(duration);
 
