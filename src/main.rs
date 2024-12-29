@@ -374,11 +374,8 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
                 thread::sleep(duration);
             }
+            println!("Send OSC thread finished sending all");
 
-            // TODO: this .hide here might actually need to be called on the main thread for portability and such
-
-            // win.hide();  // Needed because Window::delete doesn't cause the window to disappear immediately for some reason
-            // Window::delete(win);
             appmsg.send(AppMessage::DeleteWindow(win))?;
             fltk::app::awake();
 
