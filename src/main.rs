@@ -1,4 +1,4 @@
-use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*};
+use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog};
 use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
@@ -206,8 +206,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut scaling_toggle = CheckButton::default().with_label("Enable scaling").with_id("scaling_toggle");
     scaling_toggle.set_checked(true);
-    let mut scale_input = IntInput::default().with_label("Scale (NxN)").with_id("scale_input");
-    scale_input.set_maximum_size(1024);
 
     row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
@@ -219,7 +217,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
     col.fixed(&scaling_toggle, 20);
-    col.fixed(&scale_input, 30);
 
     static SEND: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
     let chan: (mpsc::Sender<Message>, mpsc::Receiver<Message>) = mpsc::channel::<Message>();
@@ -380,7 +377,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     maxcolors_slider.set_callback(|_| loadimage());
     dithering_slider.set_callback(|_| loadimage());
     scaling_toggle.set_callback(|_| loadimage());
-    scale_input.set_callback(|i| println!("scale_input: {}", i.value()));
 
     col.end();
     row.end();
