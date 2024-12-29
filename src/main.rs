@@ -163,7 +163,7 @@ fn sharedimage_to_bytes(image : &fltk::image::SharedImage, grayscale : bool) -> 
 // grayscale by reordering the pallette, which means that the indexes
 // should be able to be used without the palette as a sort-of
 // grayscale image
-fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palette) -> (Vec<u8>, Vec<quantizr::Color>)
+fn reorder_palette_by_brightness(indexes : &[u8], palette : &quantizr::Palette) -> (Vec<u8>, Vec<quantizr::Color>)
 {
     let mut permutation : Vec<usize> = (0..(palette.count as usize)).collect();
     permutation.sort_by_key(|&i| {
@@ -187,7 +187,7 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
 }
 
 // Make it a paletted image
-fn quantize_image(bytes : &Vec<u8>,
+fn quantize_image(bytes : &[u8],
                   width : u32, height : u32,
                   max_colors : i32,
                   dithering_level : f32,
@@ -286,8 +286,8 @@ fn rgbaimage_to_fltk_rgbimage(image: &image::RgbaImage) -> Result<fltk::image::R
 
 // Turn the quantized thing back into RGB for display
 fn quantized_image_to_fltk_rgbimage(
-    indexes: &Vec<u8>,
-    palette: &Vec<quantizr::Color>,
+    indexes: &[u8],
+    palette: &[quantizr::Color],
     width: u32,
     height: u32,
     grayscale_output: bool

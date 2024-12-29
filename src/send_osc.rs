@@ -318,8 +318,8 @@ const COMPRESSIONCTRL_PIXEL: u8 = 5;
 
 pub fn send_osc(
     appmsg: &mpsc::Sender<AppMessage>,
-    indexes: &Vec::<u8>,
-    palette: &Vec::<quantizr::Color>,
+    indexes: &[u8],
+    palette: &[quantizr::Color],
     width: u32,
     height: u32,
     options: SendOSCOpts,
@@ -383,7 +383,7 @@ pub fn send_osc(
 
     let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg, misc_string)?;
 
-    let palette = palette.clone();
+    let palette = palette.to_owned();
     let appmsg = appmsg.clone();
     thread::spawn(move || -> () {
 
