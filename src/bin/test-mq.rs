@@ -81,5 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     _handle2.join().map_err(|err| format!("Join fail: {err:?}"))?;
     _handle1.join().map_err(|err| format!("Join fail: {err:?}"))?;
 
+    println!("{}", "All threads joined");
+
     Ok(())
 }
