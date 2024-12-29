@@ -233,7 +233,7 @@ fn palette_to_rgbimage(palette: &[quantizr::Color], grayscale_output: bool) -> R
             pixel.copy_from_slice(&[col.r, col.g, col.b, 255]);
         }
     } else {
-        let range: std::ops::Range<u8> = 0..(palette.len() as u8 - 1);
+        let range: std::ops::Range<u8> = 0..((palette.len()-1) as u8);
         for (i, pixel) in zip(range, fb.chunks_exact_mut(4)) {
             let max: f64 = (palette.len()-1) as f64;
             let val: u8 = (i as f64 * (255.0/max)).round() as u8;
