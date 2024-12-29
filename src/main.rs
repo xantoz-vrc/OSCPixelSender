@@ -284,9 +284,17 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
     let sender_return = sender.clone();
 
     let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
-        let mut rgbaimage: Option<image::RgbaImage> = None;
+        struct ProcessedImage {
+            indexes: Vec<u8>,
+            palette: Vec<quantizr::Color>,
+            width: u32,
+            height: u32,
+            maxcolors: i32,
+            grayscale_output: bool,
+        }
 
-        let mut indexes_and_palette: Option<(Vec<u8>, Vec<quantizr::Color>, u32, u32)> = None;
+        let mut rgbaimage: Option<image::RgbaImage> = None;
+        let mut processed_image: Option<ProcessedImage> = None;
 
         loop {
             let recvres = receiver.recv();
@@ -336,13 +344,13 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 },
                 BgMessage::SaveImage(path) => {
                     match || -> Result<(), String> {
-                        let (indexes, palette, w, h) = indexes_and_palette.as_ref()
+                        let img = processed_image.as_ref()
                             .ok_or("No indexes or palette data")?;
 
-                        let w = (*w).try_into().map_err(|err| format!("Trying to save zero width image: {err}"))?;
-                        let h = (*h).try_into().map_err(|err| format!("Trying to save zero height image: {err}"))?;
+                        let w = img.width.try_into().map_err(|err| format!("Trying to save zero width image: {err}"))?;
+                        let h = img.height.try_into().map_err(|err| format!("Trying to save zero height image: {err}"))?;
 
-                        save_png::save_png(&path, w, h, &indexes, &palette)
+                        save_png::save_png(&path, w, h, &img.indexes, &img.palette)
                             .map_err(|err| format!("Couldn't save image to {path:?}: {err}"))?;
 
                         alert(&appmsg, format!("Saved image as {path:?}"));
@@ -357,7 +365,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                         let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
-                        indexes_and_palette = None;
+                        processed_image = None;
 
                         rgbaimage = None;
 
@@ -448,7 +456,14 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 palette_frame.redraw();
                             }
 
-                            indexes_and_palette = Some((indexes, palette, width as u32, height as u32));
+                            processed_image = Some(ProcessedImage{
+                                indexes: indexes,
+                                palette: palette,
+                                width: width,
+                                height: height,
+                                maxcolors: maxcolors,
+                                grayscale_output: grayscale_output,
+                            });
                             enable_save_and_send_osc_button(true)?;
                         } else {
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
@@ -460,7 +475,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             frame.redraw();
 
                             // TODO: there should be a fallback here maybe
-                            indexes_and_palette = None;
+                            processed_image = None;
                             enable_save_and_send_osc_button(false)?;
                         }
 
@@ -483,9 +498,9 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 } => {
                     println!("SendOSC{{speed: {speed:?}, pixfmt: {pixfmt:?}}}");
                     match || -> Result<(), String> {
-                        let (indexes, palette, _w, _h) = indexes_and_palette.as_ref()
+                        let img = processed_image.as_ref()
                             .ok_or("Indexes and palette not generated yet")?;
-                        send_osc::send_osc(&appmsg, indexes, palette, speed)
+                        send_osc::send_osc(&appmsg, &img.indexes, &img.palette, speed)
                             .map_err(|err| format!("send_osc failed: {err}"))?;
                         Ok(())
                     }() {
