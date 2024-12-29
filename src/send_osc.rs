@@ -582,7 +582,7 @@ pub fn send_osc(
 
             let now = std::time::Instant::now();
 
-            let chunks = indexes.chunks_exact(BYTES_PER_SEND); // TODO: Move away from chunks_exact here
+            let chunks = indexes.chunks(BYTES_PER_SEND);
             let countmax: usize = chunks.len();
             let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
             for (count, index16) in chunks.enumerate() {
