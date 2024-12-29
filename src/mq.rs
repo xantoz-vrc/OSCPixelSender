@@ -103,6 +103,16 @@ impl<T> MessageQueueReceiver<T> {
         let mut guard = self.wait_until_nonempty()?;
         Ok(guard.pop_front().unwrap())
     }
+
+    pub fn try_recv(&self) -> Result<T, TryRecvError> {
+        let mut q = self.queue.0.lock()
+            .map_err(|err| TryRecvError::RecvError(RecvError{ message: format!("Error locking mutex: {err}") }))?;
+        if q.is_empty() {
+            Err(TryRecvError::Empty)
+        } else {
+            Ok(q.pop_front().unwrap())
+        }
+    }
 }
 
 // ERROR HANDLING
@@ -137,3 +147,10 @@ impl std::fmt::Display for RecvError {
 }
 
 impl Error for RecvError {}
+
+#[derive(Debug)]
+pub enum TryRecvError {
+    RecvError(RecvError),
+    Empty,
+}
+
