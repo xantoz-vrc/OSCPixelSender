@@ -39,7 +39,7 @@ macro_rules! time_it {
         $(
             $tt
         )+
-            println!("{}: {:?}", $context, timer.elapsed());
+        println!("{}: {:?}", $context, timer.elapsed());
     }
 }
 
@@ -362,7 +362,11 @@ fn quantize_image(bytes : &[u8],
     let palette = result.get_palette();
 
     let result: (Vec<u8>, Vec<quantizr::Color>) = if reorder_palette {
-        reorder_palette_by_brightness(&indexes, palette)
+        time_it!(
+            "reorder_palette_by_brightness",
+            let result = reorder_palette_by_brightness(&indexes, palette);
+        );
+        result
     } else {
         (indexes, palette.entries[0..(palette.count as usize)].to_vec())
     };
@@ -646,21 +650,28 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             let mut width: u32;
                             let mut height: u32;
 
-                            (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale);
+                            time_it!(
+                                "rgbaimage_to_bytes",
+                                (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale);
+                            );
 
                             if scaling {
-                                time_it!("scaling",
-                                         (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type, scaler_type)
-                                         .map_err(|err| format!("scale_image failed: {err:?}"))?;
+                                time_it!(
+                                    "scale_image",
+                                    (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type, scaler_type)
+                                        .map_err(|err| format!("scale_image failed: {err:?}"))?;
                                 );
                             }
 
-                            let (mut indexes, palette) = quantize_image(
-                                &bytes, width, height,
-                                maxcolors,
-                                dithering,
-                                reorder_palette,
-                            ).map_err(|err| format!("Quantization failed: {err:?}"))?;
+                            time_it!(
+                                "quantize_image",
+                                let (mut indexes, palette) = quantize_image(
+                                    &bytes, width, height,
+                                    maxcolors,
+                                    dithering,
+                                    reorder_palette,
+                                ).map_err(|err| format!("Quantization failed: {err:?}"))?;
+                            );
 
                             if scaling {
                                 // Pad if needed (needed when ResizeType::ToFit was used)
@@ -671,14 +682,20 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 // quantization. For now just picking whatever color 0 is, but we could eventually try
                                 // to implement some fuzzy logic for picking the padding color.
 
-                                (indexes, width, height) = pad_image(indexes, 0u8, width, height, scale, scale);
+                                time_it!(
+                                    "pad_image",
+                                    (indexes, width, height) = pad_image(indexes, 0u8, width, height, scale, scale);
+                                );
                             }
 
-                            let mut rgbimage = quantized_image_to_fltk_rgbimage(
-                                &indexes, &palette,
-                                width, height,
-                                grayscale_output,
-                            ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
+                            time_it!(
+                                "quantized_image_to_fltk_rgbimage",
+                                let mut rgbimage = quantized_image_to_fltk_rgbimage(
+                                    &indexes, &palette,
+                                    width, height,
+                                    grayscale_output,
+                                ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
+                            );
 
                             if scaling {
                                 rgbimage.scale((width as i32) * (multiplier as i32),
