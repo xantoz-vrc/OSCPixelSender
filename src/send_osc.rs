@@ -353,6 +353,11 @@ pub fn send_osc(
                     let palette_chunks = palette.chunks(PALETTE_COLORS_PER_SEND);
                     let palette_numchunks = palette_chunks.len();
                     for (n, chunk) in palette.chunks(5).enumerate() {
+                        if cancel_flag.load(Ordering::Relaxed) {
+                            println!("{}", "Send OSC thread cancelled");
+                            return Ok(());
+                        }
+
                         let mut data: [u8; BYTES_PER_SEND] = [0; BYTES_PER_SEND];
                         data[0] = PALETTEWRITE_COMMAND;
                         debug_assert!(chunk.len()*3 <= (data.len() - 1));
@@ -412,7 +417,7 @@ pub fn send_osc(
             for (count, index16) in chunks.enumerate() {
                 if cancel_flag.load(Ordering::Relaxed) {
                     println!("{}", "Send OSC thread cancelled");
-                    break;
+                    return Ok(());
                 }
 
                 //dbg!(&index16);
@@ -432,14 +437,16 @@ pub fn send_osc(
                 println!("Send OSC thread finished sending all");
             }
 
-            appmsg.send(AppMessage::DeleteWindow(win))?;
-            fltk::app::awake();
-
             Ok(())
         }() {
             Ok(()) => (),
             Err(err) => error_alert(&appmsg, format!("send_osc background process failed: {err}"))
         };
+
+        if let Err(err) = appmsg.send(AppMessage::DeleteWindow(win)) {
+            error_alert(&appmsg, format!("send_osc background process failed while sending delete window command: {err}"));
+        };
+        fltk::app::awake();
     });
 
 
