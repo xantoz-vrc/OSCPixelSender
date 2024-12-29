@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::panic;
 use std::string::String;
+use image::{self, imageops};
 
 #[allow(unused_macros)]
 macro_rules! function {
@@ -57,6 +58,19 @@ fn get_file() -> Option<PathBuf> {
             dialog::NativeFileChooserAction::Cancelled => None,
         }
     }
+}
+
+fn scale_image(bytes: &[u8],
+               width: usize, height: usize,
+               nwidth: usize, nheight: usize) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
+    assert!(bytes.len() == width * height * 4); // RGBA format assumed
+
+    let img = image::RgbaImage::from_raw(width as u32, height as u32, bytes.to_vec()).ok_or("bytes not big enough for width and height")?;
+    let dimg = image::DynamicImage::from(img);
+    let newimg = dimg.resize_to_fill(nwidth as u32, nheight as u32, imageops::FilterType::Lanczos3).into_rgba8();
+
+    let (w, h): (u32, u32) = newimg.dimensions();
+    Ok((newimg.into_raw(), w as usize, h as usize))
 }
 
 fn sharedimage_to_bytes(image : &SharedImage, grayscale : bool) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
@@ -258,6 +272,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         path.clone()
                     };
 
+                    // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
+                    //       We should only convert to FLTK image format at the very end
                     let loadresult = SharedImage::load(&path);
                     let Ok(image) = loadresult else {
                         let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
@@ -275,12 +291,22 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                             eprintln!("{}", msg);
                             send.send(Message::Alert(msg));
+                            clearimage.lock().unwrap()();
+                            return;
+                        };
+
+                        let scale_result = scale_image(&bytes, width, height, 128, 128);
+                        let Ok((scaled_image, nwidth, nheight)) = scale_result else {
+                            let msg = format!("scale_image failed: {scale_result:?}");
+                            eprintln!("{}", msg);
+                            send.send(Message::Alert(msg));
+                            clearimage.lock().unwrap()();
                             return;
                         };
 
                         let qresult = quantize_image(
-                            &bytes,
-                            width, height,
+                            &scaled_image,
+                            nwidth, nheight,
                             maxcolors_slider.value() as i32,
                             dithering_slider.value() as f32,
                             reorder_palette_toggle.is_checked(),
@@ -293,12 +319,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                             return;
                         };
 
-                        let rgbresult = quantized_image_to_rgbimage(
+                        let mut rgbresult = quantized_image_to_rgbimage(
                             &indexes, &palette,
-                            width, height,
+                            nwidth, nheight,
                             grayscale_output_toggle.is_checked(),
                         );
-                        let Ok(rgbimage) = rgbresult else {
+                        let Ok(mut rgbimage) = rgbresult else {
                             let msg = format!("Quantization failed: {rgbresult:?}");
                             eprintln!("{}", msg);
                             send.send(Message::Alert(msg));
@@ -306,6 +332,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             return;
                         };
 
+                        rgbimage.scale(1024, 1024, true, true); // Display larger
                         frame.set_image(Some(rgbimage));
                     } else {
                         frame.set_image(Some(image));
