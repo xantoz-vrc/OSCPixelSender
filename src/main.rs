@@ -32,6 +32,9 @@ fn print_type_of<T>(_: &T) {
 pub enum AppMessage {
     SetTitle(String),
     Alert(String),
+    // TODO: instead of passing a closure, just have this return the window to the sender on a sender-provided channel?
+    //       Since I think calling window.show() might need to be from the main thread as well this will probably require another message
+    //       to show a window
     CreateWindow(i32, i32, String, Box<dyn FnOnce(&mut Window) -> Result<(), Box<dyn Error>> + Send + Sync>),
 }
 
@@ -253,65 +256,67 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel::<(Window, fltk::misc::Progress)>();
+
+    // New windows need to be created on the main thread, so we message the main thread
+    appmsg.send({
+        let cancel_flag = Arc::clone(&cancel_flag);
+        AppMessage::CreateWindow(
+            400, 200, "Sending OSC".to_string(),
+            Box::new(move |win| -> Result<(), Box<dyn Error>> {
+                let col = Flex::default_fill().column();
+
+                let mut progressbar = fltk::misc::Progress::default_fill();
+                progressbar.set_minimum(0.0);
+                progressbar.set_maximum(100.0);
+                progressbar.set_value(0.0);
+
+                let cancel_cb = {
+                    let cancel_flag = Arc::clone(&cancel_flag);
+                    let mut win = win.clone();
+                    move || {
+                        win.hide();
+                        cancel_flag.store(true, Ordering::Relaxed);
+                    }
+                };
+
+                win.set_callback({
+                    let mut cancel_cb = cancel_cb.clone();
+                    move |_win| {
+                        if app::event() == Event::Close {
+                            println!("Send OSC window got Event::close");
+                            cancel_cb();
+                        }
+                    }
+                });
+
+                let mut cancel_btn = Button::default().with_label("Cancel");
+                cancel_btn.set_callback({
+                    let mut cancel_cb = cancel_cb.clone();
+                    move |_btn| {
+                        println!("Send OSC window cancel button pressed");
+                        cancel_cb();
+                    }
+                });
+
+                col.end();
+
+                tx.send((win.clone(), progressbar))?;
+
+                Ok(())
+            })
+        )
+    })?;
+    fltk::app::awake();
+
+    let (mut win, mut progressbar) = rx.recv()?;
+
     thread::spawn(move || -> () {
 
         println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
 
         match || -> Result<(), Box<dyn Error>> {
-            let cancel_flag = Arc::new(AtomicBool::new(false));
-            let (tx, rx) = mpsc::channel::<(Window, fltk::misc::Progress)>();
-
-            // New windows need to be created on the main thread, so we message the main thread
-            appmsg.send({
-                let cancel_flag = Arc::clone(&cancel_flag);
-                AppMessage::CreateWindow(
-                    400, 200, "Sending OSC".to_string(),
-                    Box::new(move |win| -> Result<(), Box<dyn Error>> {
-                        let col = Flex::default_fill().column();
-
-                        let mut progressbar = fltk::misc::Progress::default_fill();
-                        progressbar.set_minimum(0.0);
-                        progressbar.set_maximum(100.0);
-                        progressbar.set_value(0.0);
-
-                        let cancel_cb = {
-                            let cancel_flag = Arc::clone(&cancel_flag);
-                            move || {
-                                cancel_flag.store(true, Ordering::Relaxed);
-                            }
-                        };
-
-                        win.set_callback({
-                            let cancel_cb = cancel_cb.clone();
-                            move |_win| {
-                                if app::event() == Event::Close {
-                                    println!("Send OSC window got Event::close");
-                                    cancel_cb();
-                                }
-                            }
-                        });
-
-                        let mut cancel_btn = Button::default().with_label("Cancel");
-                        cancel_btn.set_callback({
-                            let cancel_cb = cancel_cb.clone();
-                            move |_btn| {
-                                println!("Send OSC window cancel button pressed");
-                                cancel_cb();
-                            }
-                        });
-
-                        col.end();
-
-                        tx.send((win.clone(), progressbar))?;
-
-                        Ok(())
-                    })
-                )
-            })?;
-            fltk::app::awake();
-
-            let (mut win, mut progressbar) = rx.recv()?;
-
             let duration = Duration::from_secs_f32(sleep_time);
 
             let mut msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
