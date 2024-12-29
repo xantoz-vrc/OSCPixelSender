@@ -614,8 +614,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("App finished");
 
-    bg.send(BgMessage::Quit)?;
+    bg.send_or_replace(BgMessage::Quit)?;
     joinhandle.join().map_err(|err| format!("Joining failed: {err:?}"))?;
+    println!("BG Thread joined");
 
     Ok(())
 }
