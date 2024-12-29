@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     for _i in 0..5 {
-        tx.send(Message::Clear).unwrap();
+        tx.send(Message::Clear)?;
         thread::sleep(Duration::from_secs_f64(0.1));
     }
 
@@ -103,22 +103,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     for i in 1..100 {
-        // tx.send_or_replace(Message::Update(i)).unwrap();
         println!("put Update {i}");
-        // tx.send_or_replace_if(|m| *m != Message::Clear, Message::Update(i)).unwrap();
-        tx.send_or_replace_if(Message::is_update, Message::Update(i)).unwrap();
+        tx.send_or_replace_if(Message::is_update, Message::Update(i))?;
         thread::sleep(Duration::from_secs_f64(0.2));
     }
 
     thread::sleep(Duration::from_secs_f64(0.5));
 
     for i in 0..5 {
-        tx.send(Message::Update(i - 100)).unwrap();
-        tx.send(Message::Clear).unwrap();
+        tx.send(Message::Update(i - 100))?;
+        tx.send(Message::Clear)?;
         thread::sleep(Duration::from_secs_f64(0.1));
     }
 
-    tx.send(Message::Stop).unwrap();
+    tx.send(Message::Stop)?;
 
     println!("{}", "Main thread DONE");
 
