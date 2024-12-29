@@ -57,7 +57,7 @@ pub enum BgMessage{
         maxcolors: i32,
         dithering: f32,
         scaling: bool,
-        scale: usize,
+        scale: u32,
         multiplier: u8,
     },
     ClearImage,
@@ -103,19 +103,19 @@ fn get_file(dialogtype: dialog::FileDialogType) -> Option<PathBuf> {
 }
 
 fn scale_image(bytes: Vec<u8>,
-               width: usize, height: usize,
-               nwidth: usize, nheight: usize) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
-    assert!(bytes.len() == width * height * 4); // RGBA format assumed
+               width: u32, height: u32,
+               nwidth: u32, nheight: u32) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
+    assert!(bytes.len() == (width * height * 4) as usize); // RGBA format assumed
 
     let img = image::RgbaImage::from_raw(width as u32, height as u32, bytes).ok_or("bytes not big enough for width and height")?;
     let dimg = image::DynamicImage::from(img);
     let newimg = dimg.resize_to_fill(nwidth as u32, nheight as u32, imageops::FilterType::Lanczos3).into_rgba8();
 
     let (w, h): (u32, u32) = newimg.dimensions();
-    Ok((newimg.into_raw(), w.try_into()?, h.try_into()?))
+    Ok((newimg.into_raw(), w, h))
 }
 
-fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
+fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
     use image::Pixel;
 
     let mut newimg = image.clone();
@@ -130,11 +130,11 @@ fn rgbaimage_to_bytes(image: &image::RgbaImage, grayscale: bool) -> Result<(Vec<
         }
     }
 
-    Ok((newimg.into_raw(), w.try_into()?, h.try_into()?))
+    Ok((newimg.into_raw(), w, h))
 }
 
 #[allow(dead_code)]
-fn sharedimage_to_bytes(image : &fltk::image::SharedImage, grayscale : bool) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
+fn sharedimage_to_bytes(image : &fltk::image::SharedImage, grayscale : bool) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
     // let bytes : Vec<u8> = image.to_rgb_image()?.convert(ColorDepth::L8)?.convert(ColorDepth::Rgba8)?.to_rgb_data();
 
     let mut rgbimage = image.to_rgb_image()?;
@@ -142,10 +142,10 @@ fn sharedimage_to_bytes(image : &fltk::image::SharedImage, grayscale : bool) -> 
         rgbimage = rgbimage.convert(ColorDepth::L8)?;
     }
 
-    let bytes : Vec<u8> = rgbimage.convert(ColorDepth::Rgba8)?.to_rgb_data();
+    let bytes: Vec<u8> = rgbimage.convert(ColorDepth::Rgba8)?.to_rgb_data();
     println!("bytes.len(): {}", bytes.len());
-    let width : usize = rgbimage.data_w().try_into()?;
-    let height : usize = rgbimage.data_h().try_into()?;
+    let width: u32 = rgbimage.data_w().try_into()?;
+    let height: u32 = rgbimage.data_h().try_into()?;
 
     Ok((bytes, width, height))
 }
@@ -179,25 +179,25 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
 
 // Make it a paletted image
 fn quantize_image(bytes : &Vec<u8>,
-                  width : usize, height : usize,
+                  width : u32, height : u32,
                   max_colors : i32,
                   dithering_level : f32,
                   reorder_palette : bool) -> Result<(Vec<u8>, Vec<quantizr::Color>), Box<dyn Error>> {
 
     // Need to make sure that input buffer is matching width and
     // height params for an RGBA buffer (4 bytes per pixel)
-    assert!(width * height * 4 == bytes.len());
+    assert!((width * height * 4) as usize == bytes.len());
 
-    let qimage = quantizr::Image::new(bytes, width, height)?;
+    let qimage = quantizr::Image::new(bytes, width as usize, height as usize)?;
     let mut qopts = quantizr::Options::default();
     qopts.set_max_colors(max_colors)?;
 
     let mut result = quantizr::QuantizeResult::quantize(&qimage, &qopts);
     result.set_dithering_level(dithering_level)?;
 
-    let mut indexes = vec![0u8; width*height];
+    let mut indexes = vec![0u8; (width*height) as usize];
     result.remap_image(&qimage, indexes.as_mut_slice())?;
-    assert!(width * height == indexes.len());
+    assert!((width * height) as usize == indexes.len());
 
     let palette = result.get_palette();
 
@@ -216,12 +216,14 @@ fn rgbaimage_to_fltk_rgbimage(image: &image::RgbaImage) -> Result<fltk::image::R
 }
 
 // Turn the quantized thing back into RGB for display
-fn quantized_image_to_fltk_rgbimage(indexes : &Vec<u8>,
-                                    palette : &Vec<quantizr::Color>,
-                                    width : usize,
-                                    height : usize,
-                                    grayscale_output : bool) -> Result<fltk::image::RgbImage, Box<dyn Error>> {
-    assert!(width * height == indexes.len());
+fn quantized_image_to_fltk_rgbimage(
+    indexes: &Vec<u8>,
+    palette: &Vec<quantizr::Color>,
+    width: u32,
+    height: u32,
+    grayscale_output: bool
+) -> Result<fltk::image::RgbImage, Box<dyn Error>> {
+    assert!((width * height) as usize == indexes.len());
 
     let mut fb: Vec<u8> = vec![0u8; indexes.len() * 4];
     if !grayscale_output {
@@ -401,8 +403,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
                         if !no_quantize {
                             let mut bytes: Vec<u8>;
-                            let mut width: usize;
-                            let mut height: usize;
+                            let mut width: u32;
+                            let mut height: u32;
 
                             (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale)
                                 .map_err(|err| format!("rgbaimage_to_bytes failed: {err:?}"))?;
