@@ -158,6 +158,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut openbtn = Button::default().with_label("Open");
     let mut clearbtn = Button::default().with_label("Clear");
 
+    let mut no_quantize_toggle = CheckButton::default().with_label("Disable quantization");
     let mut grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting");
     let mut grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale");
     let mut reorder_palette_toggle = CheckButton::default().with_label("Sort palette");
@@ -175,6 +176,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
+    col.fixed(&no_quantize_toggle, 10);
     col.fixed(&grayscale_toggle, 10);
     col.fixed(&grayscale_output_toggle, 10);
     col.fixed(&reorder_palette_toggle, 10);
@@ -200,6 +202,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let loadimage = Arc::new(Mutex::new({
         let frame = frame.clone();
         let mut wind = wind.clone();
+        let no_quantize_toggle = no_quantize_toggle.clone();
         let grayscale_toggle = grayscale_toggle.clone();
         let grayscale_output_toggle = grayscale_output_toggle.clone();
         let reorder_palette_toggle = reorder_palette_toggle.clone();
@@ -213,6 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             thread::spawn({
                 let mut frame = frame.clone();
+                let no_quantize_toggle = no_quantize_toggle.clone();
                 let grayscale_toggle = grayscale_toggle.clone();
                 let grayscale_output_toggle = grayscale_output_toggle.clone();
                 let reorder_palette_toggle = reorder_palette_toggle.clone();
@@ -244,33 +248,38 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     println!("Loaded image {path:?}");
 
-                    println!("(before scale) w,h: {},{}", image.width(), image.height());
-                    //image.scale(256, 256, true, true);
-                    println!("(after scale) w,h: {},{}", image.width(), image.height());
+                    // println!("(before scale) w,h: {},{}", image.width(), image.height());
+                    // //image.scale(256, 256, true, true);
+                    // println!("(after scale) w,h: {},{}", image.width(), image.height());
 
-                    let bresult = sharedimage_to_bytes(&image, grayscale_toggle.is_checked());
-                    let Ok((bytes, width, height)) = bresult else {
-                        let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
-                        eprintln!("{}", msg);
-                        dialog::alert_default(&msg);
-                        return;
-                    };
+                    if !no_quantize_toggle.is_checked() {
+                        let bresult = sharedimage_to_bytes(&image, grayscale_toggle.is_checked());
+                        let Ok((bytes, width, height)) = bresult else {
+                            let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
+                            eprintln!("{}", msg);
+                            dialog::alert_default(&msg);
+                            return;
+                        };
 
-                    let qresult = quantize_image(
-                        &bytes, width, height,
-                        maxcolors_slider.value() as i32,
-                        grayscale_output_toggle.is_checked(),
-                        reorder_palette_toggle.is_checked(),
-                        dithering_slider.value() as f32,
-                    );
-                    let Ok(rgbimage) = qresult else {
-                        let msg = format!("Quantization failed: {qresult:?}");
-                        eprintln!("{}", msg);
-                        dialog::alert_default(&msg);
-                        return;
-                    };
+                        let qresult = quantize_image(
+                            &bytes, width, height,
+                            maxcolors_slider.value() as i32,
+                            grayscale_output_toggle.is_checked(),
+                            reorder_palette_toggle.is_checked(),
+                            dithering_slider.value() as f32,
+                        );
+                        let Ok(rgbimage) = qresult else {
+                            let msg = format!("Quantization failed: {qresult:?}");
+                            eprintln!("{}", msg);
+                            dialog::alert_default(&msg);
+                            return;
+                        };
 
-                    frame.set_image(Some(rgbimage));
+                        frame.set_image(Some(rgbimage));
+                    } else {
+                        frame.set_image(Some(image));
+                    }
+
                     frame.set_label(&path.to_string_lossy());
                     frame.changed();
                 }
@@ -311,6 +320,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    no_quantize_toggle.set_callback(loadimage_callback.clone());
     grayscale_toggle.set_callback(loadimage_callback.clone());
     grayscale_output_toggle.set_callback(loadimage_callback.clone());
     reorder_palette_toggle.set_callback(loadimage_callback.clone());
