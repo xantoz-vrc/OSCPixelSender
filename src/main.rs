@@ -98,14 +98,14 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
 // TODO: Split this up into two functions, one which returns the
 // indexes+palette and another which turns indexes + palette into an
 // RGBImage for display
-fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32, grayscale_output : bool, reorder_palette : bool) -> Result<RgbImage, Box<dyn Error>> {
+fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32, grayscale_output : bool, reorder_palette : bool, dithering_level : f32) -> Result<RgbImage, Box<dyn Error>> {
 
     let qimage = quantizr::Image::new(bytes, width, height)?;
     let mut qopts = quantizr::Options::default();
     qopts.set_max_colors(max_colors)?;
 
     let mut result = quantizr::QuantizeResult::quantize(&qimage, &qopts);
-    result.set_dithering_level(1.0)?;
+    result.set_dithering_level(dithering_level)?;
 
     let mut indexes = vec![0u8; width*height];
     result.remap_image(&qimage, indexes.as_mut_slice())?;
@@ -168,6 +168,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     maxcolors_slider.set_step(1.0, 1);
     maxcolors_slider.set_value(16.0);
 
+    let mut dithering_slider = HorValueSlider::default().with_label("Dithering Level");
+    dithering_slider.set_range(0.0, 1.0);
+    dithering_slider.set_value(1.0);
+
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
@@ -175,6 +179,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&grayscale_output_toggle, 10);
     col.fixed(&reorder_palette_toggle, 10);
     col.fixed(&maxcolors_slider, 30);
+    col.fixed(&dithering_slider, 30);
 
     let imagepath_arc : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
 
@@ -199,6 +204,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let grayscale_output_toggle = grayscale_output_toggle.clone();
         let reorder_palette_toggle = reorder_palette_toggle.clone();
         let maxcolors_slider = maxcolors_slider.clone();
+        let dithering_slider = dithering_slider.clone();
         let imagepath = Arc::clone(&imagepath_arc);
         let clearimage = Arc::clone(&clearimage_arc);
 
@@ -211,6 +217,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let grayscale_output_toggle = grayscale_output_toggle.clone();
                 let reorder_palette_toggle = reorder_palette_toggle.clone();
                 let maxcolors_slider = maxcolors_slider.clone();
+                let dithering_slider = dithering_slider.clone();
                 let imagepath = Arc::clone(&imagepath);
                 let clearimage = Arc::clone(&clearimage);
                 move || {
@@ -251,10 +258,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     let qresult = quantize_image(
                         &bytes, width, height,
-
                         maxcolors_slider.value() as i32,
                         grayscale_output_toggle.is_checked(),
-                        reorder_palette_toggle.is_checked()
+                        reorder_palette_toggle.is_checked(),
+                        dithering_slider.value() as f32,
                     );
                     let Ok(rgbimage) = qresult else {
                         let msg = format!("Quantization failed: {qresult:?}");
@@ -308,12 +315,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     grayscale_output_toggle.set_callback(loadimage_callback.clone());
     reorder_palette_toggle.set_callback(loadimage_callback.clone());
 
-    maxcolors_slider.set_callback({
-        let loadimage = Arc::clone(&loadimage_arc);
-        move |_| {
-            loadimage.lock().unwrap()();
-        }
-    });
+    maxcolors_slider.set_callback({ let loadimage = Arc::clone(&loadimage_arc); move |_| { loadimage.lock().unwrap()(); } });
+    dithering_slider.set_callback({ let loadimage = Arc::clone(&loadimage_arc); move |_| { loadimage.lock().unwrap()(); } });
 
     col.end();
     row.end();
