@@ -423,16 +423,17 @@ pub fn send_osc(
         // return String)
         #[allow(non_snake_case)]
         fn vStr(n: u8) -> &'static str {
-            static mut BYTES: [u8; 2] = *b"V0"; // Consider thread local and Cell or RefCall
-
-            // Safe because the function result is always used
-            // immediately, and always in the same thread (maybe the
-            // entire function really should be marked unsafe too though?)
-            unsafe {
-                BYTES[1] = vNumberToChar(n);
-                // Using the addr_of! thing to suppress a warning about borrowing from mutable static
-                std::str::from_utf8(&*std::ptr::addr_of!(BYTES)).expect("UTF8 assured by always keeping BYTES as ASCII")
+            thread_local! {
+                static BUFFER: std::cell::RefCell<[u8; 2]> = std::cell::RefCell::new(*b"V0");
             }
+
+            BUFFER.with(|buffer| {
+                let mut buf = buffer.borrow_mut();
+                buf[1] = vNumberToChar(n);
+                // Safety: Guaranteed to always be 7bit ASCII (by extension UTF8)
+                //         Users of this function promise to use the value referenced before calling the function again
+                unsafe { std::str::from_utf8_unchecked(&*std::ptr::addr_of!(*buf)) }
+            })
         }
 
         let send_cmd = |cmd: &[u8]| -> Result<(), Box<dyn Error>> {
