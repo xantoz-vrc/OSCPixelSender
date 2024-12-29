@@ -207,7 +207,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut scaling_toggle = CheckButton::default().with_label("Enable scaling").with_id("scaling_toggle");
     scaling_toggle.set_checked(true);
 
-    row.fixed(&col, 200);
+    row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
     col.fixed(&no_quantize_toggle, 10);
