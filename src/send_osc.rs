@@ -254,8 +254,11 @@ pub fn send_osc(
         };
 
         let send_cmd = |cmd: &[u8]| -> Result<(), Box<dyn Error>> {
-            for (n, val) in cmd.iter().enumerate() {
-                send_int(&format!("V{n:X}"), *val as i32)?;
+            for n in 0..16 {
+                send_int(&format!("V{n:X}"),
+                         // cmd.get(n).unwrap_or(&0u8) as i32
+                         cmd.get(n).copied().unwrap_or_default() as i32
+                )?;
             }
             Ok(())
         };
