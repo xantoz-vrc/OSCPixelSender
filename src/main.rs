@@ -364,7 +364,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     clearbtn.set_callback({
-        move |_| {
+        |_| {
             println!("Clear button pressed");
             clearimage();
         }
