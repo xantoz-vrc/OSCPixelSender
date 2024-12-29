@@ -206,7 +206,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let path = {
                 let imagepath_readguard = imagepath.read().unwrap();
                 let Some(path) = &*imagepath_readguard else {
-                    eprintln!("No file selected");
+                    eprintln!("loadimage: No file selected/imagepath not set");
                     return;
                 };
                 path.clone()
@@ -256,7 +256,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         let loadimage = Arc::clone(&loadimage_arc);
         move |_| {
             println!("Open button pressed");
-            *(imagepath.write().unwrap()) = get_file();
+
+            let Some(path) = get_file() else {
+                eprintln!("No file selected/cancelled");
+                return;
+            };
+
+            *(imagepath.write().unwrap()) = Some(path);
             loadimage.lock().unwrap()();
         }
     });
