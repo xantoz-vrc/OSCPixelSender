@@ -179,6 +179,10 @@ pub fn send_osc(
     height: u32,
     options: SendOSCOpts,
 ) -> Result<(), Box<dyn Error>> {
+    if indexes.len() == 0 || width == 0 || height == 0 {
+        return Err("indexes, width or height are 0 and they should't be".into());
+    }
+
     if indexes.len() != (width as usize) * (height as usize) {
         return Err("width and height not matching length of indexes array".into());
     }
@@ -200,6 +204,7 @@ pub fn send_osc(
     const BITDEPTH_PIXEL: u8 = 2;
     const PALETTECTRL_PIXEL: u8 = 3;
     const PALETTEWRIDX_PIXEL: u8 = 4;
+    const COMPRESSIONCTRL_PIXEL: u8 = 5;
 
     // Get the bitdepth and whether we should be indexed or grayscale from pixfmt
     // TODO: Perhaps it would've made more sense with a regular old struct for
@@ -226,7 +231,7 @@ pub fn send_osc(
     // that the width doesn't divide evenly when we are using 4bpp,
     // 2bpp or 1bpp modes. In that case each line must be padded out
     // some pixels.
-    let indexes: Vec<u8> = match bitdepth {
+    let mut indexes: Vec<u8> = match bitdepth {
         1 =>
             indexes
             .chunks_exact(width.try_into()?)
@@ -265,6 +270,135 @@ pub fn send_osc(
         8 => indexes.clone(),
         _ => panic!("This should be unreachable"),
     };
+
+    // Optionally apply RLE compression
+    if options.rle_compression {
+        let mut result: Vec<u8> = Vec::new();
+
+/*
+        let mut count: u8 = 1;
+        let mut current_value: u8 = indexes[0];
+        for &value in &indexes[1..] {
+            // determine whether or not we are at the end two bytes of a
+            // BYTES_PER_SEND chunk and then simply put two bytes as is, because
+            // we cannot fit an escaped RLE sequence thingamajig here
+            if (result.len() % BYTES_PER_SEND) >= (BYTES_PER_SEND - 2) {
+                result.push(value);
+                count = 1;
+                current_value = value;
+                // FIXME: I think we might start counting for a value that's already been inserted here?
+            } else if value == current_value {
+                if let Some(x) = count.checked_add(1) {
+                    count = x;
+                } else {
+                    // We can no longer fit the count in a single byte if we are to go on, we are forced to start anew
+                    result.push(current_value);
+                    result.push(current_value);
+                    result.push(count);
+                    count = 1;
+                }
+            } else {
+                if count > 1 {
+                    result.push(current_value);
+                    result.push(current_value);
+                    result.push(count);
+                    current_value = value;
+                    count = 1;
+                } else {
+                    result.push(count);
+                }
+            }
+        }
+        if count > 1 {          // FIXME: Verify that this truly works despite the logic above for handling the last two bytes in a 16-byte chunk and the handling of overflow in count
+            result.push(current_value);
+            result.push(current_value);
+            result.push(count);
+        } else {
+            result.push(current_value);
+        }
+*/
+
+        let mut count: u8 = 0;
+        let mut current_value: Option<u8> = None;
+        // let mut maybe_push = |value: u8| {
+        //     if let Some(curval) = current_value {
+        //         if count > 1 {
+        //             result.push(curval);
+        //             result.push(curval);
+        //             result.push(count);
+        //             current_value = Some(value);
+        //             count = 1;
+        //         } else if count == 1 {
+        //             result.push(curval);
+        //             current_value = Some(value);
+        //             count = 1;
+        //         } else {
+        //             panic!("current_value is Some(x) but count == 0");
+        //         }
+        //     }
+        // };
+        fn maybe_push(
+            result: &mut Vec<u8>,
+            current_value: &mut Option<u8>,
+            count: &mut u8,
+            value: u8,
+        ) {
+            if let Some(curval) = current_value.as_mut() {
+                if *count > 1u8 {
+                    result.push(*curval);
+                    result.push(*curval);
+                    result.push(*count);
+                    *curval = value;
+                    *count = 1u8;
+                } else if *count == 1u8 {
+                    result.push(*curval);
+                    *curval = value;
+                    *count = 1u8;
+                } else {
+                    panic!("current_value is Some(x) but count == 0");
+                }
+            }
+        }
+
+        for &value in &indexes[..] {
+            // determine whether or not we are at the end two bytes of a
+            // BYTES_PER_SEND chunk and then simply put two bytes as is, because
+            // we cannot fit an escaped RLE sequence thingamajig here
+            if (result.len() % BYTES_PER_SEND) >= (BYTES_PER_SEND - 2) {
+                maybe_push(&mut result, &mut current_value, &mut count, value);
+                result.push(value);
+                current_value = None;
+                count = 0;
+            } else if current_value == None {
+                current_value = Some(value);
+                count = 1;
+            } else if value == current_value.expect("current_value should always be Some(x) here") {
+                if let Some(x) = count.checked_add(1) {
+                    count = x;
+                } else {
+                    // We can no longer fit the count in a single byte if we are to go on, we are forced to start anew
+                    result.push(value);
+                    result.push(value);
+                    result.push(count);
+                    // No need to set current_value here as they are identical per the value == current_value check above
+                    count = 1;
+                }
+            } else {
+                maybe_push(&mut result, &mut current_value, &mut count, value);
+            }
+        }
+        maybe_push(&mut result, &mut current_value, &mut count, 0);
+
+        // DEBUG OUTPUT
+        println!("RLE Compression ratio: {:.2}% (original length: {}, compressed length: {})",
+                 ((result.len() as f64) / (indexes.len() as f64))*100.0, indexes.len(), result.len());
+        println!("RLE compressed data:");
+        for chunk in result.chunks(16) {
+            println!("  {chunk:?}");
+        }
+
+        indexes = result;
+    }
 
     let (cancel_flag, win, progressbar) = create_progressbar_window(appmsg)?;
 
@@ -336,6 +470,15 @@ pub fn send_osc(
             progress_message("Reset pixel pos".to_string(), 0.0);
             send_int("V0", 0)?;
             send_bool("Reset", true)?;
+            send_clk()?;
+            thread::sleep(duration);
+
+            // Set compression mode
+            progress_message((if options.rle_compression { "Enable RLE compression" } else { "Disable RLE compression" }).to_string(), 0.0);
+            send_cmd(&[SETPIXEL_COMMAND,
+                       COMPRESSIONCTRL_PIXEL, 0, // Controls compression. Red channel 0 is off, red channel 255 is on
+                       if options.rle_compression { 255 } else { 0 },
+                       0, 0, 0])?;
             send_clk()?;
             thread::sleep(duration);
 
@@ -431,7 +574,7 @@ pub fn send_osc(
 
             let now = std::time::Instant::now();
 
-            let chunks = indexes.chunks_exact(BYTES_PER_SEND);
+            let chunks = indexes.chunks_exact(BYTES_PER_SEND); // TODO: Move away from chunks_exact here
             let countmax: usize = chunks.len();
             let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
             for (count, index16) in chunks.enumerate() {

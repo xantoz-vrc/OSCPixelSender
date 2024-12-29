@@ -61,10 +61,7 @@ pub enum BgMessage{
         multiplier: u8,
     },
     ClearImage,
-    SendOSC{
-        speed: f64,
-        pixfmt: send_osc::PixFmt,
-    },
+    SendOSC(send_osc::SendOSCOpts),
     Quit,
 }
 
@@ -500,19 +497,11 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         },
                     };
                 },
-                BgMessage::SendOSC{
-                    speed,
-                    pixfmt,
-                } => {
-                    println!("SendOSC{{speed: {speed:?}, pixfmt: {pixfmt:?}}}");
+                BgMessage::SendOSC(options) => {
+                    println!("SendOSC({options:?})");
                     match || -> Result<(), String> {
                         let img = processed_image.as_ref()
                             .ok_or("Indexes and palette not generated yet")?;
-                        let options = send_osc::SendOSCOpts{
-                            pixfmt: pixfmt,
-                            msgs_per_second: speed,
-                            ..Default::default()
-                        };
                         send_osc::send_osc(&appmsg, &img.indexes, &img.palette, img.width, img.height, options)
                             .map_err(|err| format!("send_osc failed: {err}"))?;
                         Ok(())
@@ -647,6 +636,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     osc_speed_slider.set_range(0.5, 20.0);
     osc_speed_slider.set_step(0.5, 1);
     osc_speed_slider.set_value(OSC_SPEED_DEFAULT);
+    let osc_rle_compression_toggle = CheckButton::default().with_label("Use RLE compression").with_id("osc_rle_compression_toggle");
     let mut osc_pixfmt_choice = menu::Choice::default()
         .with_label("OSC Pixel format");
     // let pixfmt_choices = send_osc::PixFmt::into_iter().fold("".to_string(), |acc, s| format!("{acc}|{}", s.to_string()));
@@ -677,6 +667,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&divider, 5);
     col.fixed(&send_osc_btn, 50);
     col.fixed(&osc_speed_slider, 30);
+    col.fixed(&osc_rle_compression_toggle, 30);
     col.fixed(&osc_pixfmt_choice, 30);
 
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
@@ -770,12 +761,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |_| {
             match || -> Result<(), String> {
                 bg.send(
-                    BgMessage::SendOSC {
-                        speed: osc_speed_slider.value(),
+                    BgMessage::SendOSC(send_osc::SendOSCOpts{
                         pixfmt: osc_pixfmt_choice.choice()
-                                    .ok_or("No PixFmt selected")?
-                                    .parse()?
-                    }
+                            .ok_or("No PixFmt selected")?
+                            .parse()?,
+                        msgs_per_second: osc_speed_slider.value(),
+                        rle_compression: osc_rle_compression_toggle.value(),
+                        ..Default::default()
+                    })
                 ).map_err(|err| format!("bg.send error: {err}"))?;
                 Ok(())
             }() {
