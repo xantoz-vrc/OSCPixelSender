@@ -8,7 +8,10 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::Mutex;
 use std::thread;
+use std::panic;
+use std::string::String;
 
+#[allow(unused_macros)]
 macro_rules! function {
     () => {{
         fn f() {}
@@ -20,10 +23,16 @@ macro_rules! function {
     }}
 }
 
+#[allow(dead_code)]
 fn print_type_of<T>(_: &T) {
     println!("{}", std::any::type_name::<T>());
 }
 
+#[derive(Debug, Clone)]
+pub enum Message {
+    SetTitle(String),
+    Alert(String),
+}
 
 fn get_file() -> Option<PathBuf> {
     let mut nfc = dialog::NativeFileChooser::new(dialog::FileDialogType::BrowseFile);
@@ -207,34 +216,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
 
-    let imagepath : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
+    let (send, recv) = app::channel::<Message>();
 
-    fn set_window_label_clear() {
-        println!("Entered {}", function!());
-        let mut windows = fltk::app::windows();
-        let Some([ref mut window]) = windows.as_deref_mut() else {
-            eprintln!("{}: Couldn't find window", function!());
-            return;
-        };
-        window.set_label("Clear");
-    }
+    let imagepath : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
 
     let clearimage = Arc::new(Mutex::new({
         let mut frame = frame.clone();
         let imagepath = Arc::clone(&imagepath);
+        let send = send.clone();
         move || {
             *(imagepath.write().unwrap()) = None;
             frame.set_image(None::<SharedImage>);
             frame.set_label("Clear");
             frame.changed();
-            fltk::app::awake_callback(set_window_label_clear);
+            send.send(Message::SetTitle("Clear".to_string()));
         }
     }));
 
     // let loadimage : Arc<Mutex<dyn FnMut()>> = Arc::new(Mutex::new({
     let loadimage = Arc::new(Mutex::new({
         let frame = frame.clone();
-        let mut wind = wind.clone();
+        // let mut wind = wind.clone();
         let no_quantize_toggle = no_quantize_toggle.clone();
         let grayscale_toggle = grayscale_toggle.clone();
         let grayscale_output_toggle = grayscale_output_toggle.clone();
@@ -243,6 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let dithering_slider = dithering_slider.clone();
         let imagepath = Arc::clone(&imagepath);
         let clearimage = Arc::clone(&clearimage);
+        let send = send.clone();
 
         move || {
             println!("loadimage called");
@@ -257,6 +260,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let dithering_slider = dithering_slider.clone();
                 let imagepath = Arc::clone(&imagepath);
                 let clearimage = Arc::clone(&clearimage);
+                let send = send.clone();
+
                 move || {
                     // Clone the path, we do not want to keep holding the
                     // lock. It can lead to deadlock with clearimage otherwise
@@ -270,12 +275,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                         path.clone()
                     };
 
-
                     let loadresult = SharedImage::load(&path);
                     let Ok(image) = loadresult else {
                         let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
                         eprintln!("{}", msg);
-                        dialog::alert_default(&msg);
+                        send.send(Message::Alert(msg));
                         clearimage.lock().unwrap()();
                         return;
                     };
@@ -291,7 +295,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((bytes, width, height)) = bresult else {
                             let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                             eprintln!("{}", msg);
-                            dialog::alert_default(&msg);
+                            send.send(Message::Alert(msg));
                             return;
                         };
 
@@ -305,7 +309,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((indexes, palette)) = qresult else {
                             let msg = format!("Quantization failed: {:?}", qresult.err());
                             eprintln!("{}", msg);
-                            dialog::alert_default(&msg);
+                            send.send(Message::Alert(msg));
                             return;
                         };
 
@@ -317,7 +321,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok(rgbimage) = rgbresult else {
                             let msg = format!("Quantization failed: {rgbresult:?}");
                             eprintln!("{}", msg);
-                            dialog::alert_default(&msg);
+                            send.send(Message::Alert(msg));
                             return;
                         };
 
@@ -326,12 +330,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         frame.set_image(Some(image));
                     }
 
-                    frame.set_label(&path.to_string_lossy());
+                    let pathstr = path.to_string_lossy();
+                    frame.set_label(&pathstr);
                     frame.changed();
+                    send.send(Message::SetTitle(pathstr.to_string()));
                 }
             });
-
-            wind.set_label(&imagepath.read().unwrap().as_deref().unwrap_or(&Path::new("blargh")).to_string_lossy());
         }
     }));
 
@@ -381,7 +385,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     wind.make_resizable(true);
     wind.show();
 
-    app.run()?;
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new({
+        let send = send.clone();
+        move |panic_info| {
+            // invoke the default handler and exit the process
+            orig_hook(panic_info);
+            send.send(Message::Alert(format!("{panic_info}")));
+        }
+    }));
+
+    // app.run()?;
+
+    while app.wait() {
+        if let Some(msg) = recv.recv() {
+            match msg {
+                Message::Alert(s)    => dialog::alert_default(&s),
+                Message::SetTitle(s) => wind.set_label(&s),
+            }
+        }
+    }
 
     println!("App finished");
     Ok(())
