@@ -11,6 +11,7 @@ use std::panic;
 use std::string::String;
 use image::{self, imageops};
 use std::sync::mpsc;
+use std::sync::OnceLock;
 
 #[allow(unused_macros)]
 macro_rules! function {
@@ -215,22 +216,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
 
-    let (send, recv) = mpsc::channel::<Message>();
+    static SEND: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
+    let chan: (mpsc::Sender<Message>, mpsc::Receiver<Message>) = mpsc::channel::<Message>();
+    let recv = chan.1;
+    SEND.set(chan.0).unwrap();
 
     static IMAGEPATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-    let clearimage = Arc::new(Mutex::new({
-        let send = send.clone();
-        move || {
-            let mut frame: Frame = app::widget_from_id("frame").unwrap();
+    fn clearimage() {
+        let mut frame: Frame = app::widget_from_id("frame").unwrap();
 
-            *(IMAGEPATH.write().unwrap()) = None;
-            frame.set_image(None::<SharedImage>);
-            frame.set_label("Clear");
-            frame.changed();
-            send.send(Message::SetTitle("Clear".to_string())).unwrap();
-        }
-    }));
+        *(IMAGEPATH.write().unwrap()) = None;
+        frame.set_image(None::<SharedImage>);
+        frame.set_label("Clear");
+        frame.changed();
+        SEND.get().unwrap().send(Message::SetTitle("Clear".to_string())).unwrap();
+    }
 
     let loadimage = Arc::new(Mutex::new({
         let no_quantize_toggle = no_quantize_toggle.clone();
@@ -239,8 +240,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let reorder_palette_toggle = reorder_palette_toggle.clone();
         let maxcolors_slider = maxcolors_slider.clone();
         let dithering_slider = dithering_slider.clone();
-        let clearimage = Arc::clone(&clearimage);
-        let send = send.clone();
 
         move || {
             println!("loadimage called");
@@ -252,8 +251,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let reorder_palette_toggle = reorder_palette_toggle.clone();
                 let maxcolors_slider = maxcolors_slider.clone();
                 let dithering_slider = dithering_slider.clone();
-                let clearimage = Arc::clone(&clearimage);
-                let send = send.clone();
 
                 move || {
                     let mut frame: Frame = app::widget_from_id("frame").unwrap();
@@ -276,8 +273,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let Ok(image) = loadresult else {
                         let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
                         eprintln!("{}", msg);
-                        send.send(Message::Alert(msg)).unwrap();
-                        clearimage.lock().unwrap()();
+                        SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
+                        clearimage();
                         return;
                     };
 
@@ -288,8 +285,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((bytes, width, height)) = bresult else {
                             let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg)).unwrap();
-                            clearimage.lock().unwrap()();
+                            SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
+                            clearimage();
                             return;
                         };
 
@@ -297,8 +294,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((scaled_image, nwidth, nheight)) = scale_result else {
                             let msg = format!("scale_image failed: {scale_result:?}");
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg)).unwrap();
-                            clearimage.lock().unwrap()();
+                            SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
+                            clearimage();
                             return;
                         };
 
@@ -312,8 +309,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok((indexes, palette)) = qresult else {
                             let msg = format!("Quantization failed: {:?}", qresult.err());
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg)).unwrap();
-                            clearimage.lock().unwrap()();
+                            SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
+                            clearimage();
                             return;
                         };
 
@@ -325,8 +322,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let Ok(mut rgbimage) = rgbresult else {
                             let msg = format!("Quantization failed: {rgbresult:?}");
                             eprintln!("{}", msg);
-                            send.send(Message::Alert(msg)).unwrap();
-                            clearimage.lock().unwrap()();
+                            SEND.get().unwrap().send(Message::Alert(msg)).unwrap();
+                            clearimage();
                             return;
                         };
 
@@ -339,7 +336,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let pathstr = path.to_string_lossy();
                     frame.set_label(&pathstr);
                     frame.changed();
-                    send.send(Message::SetTitle(pathstr.to_string())).unwrap();
+                    SEND.get().unwrap().send(Message::SetTitle(pathstr.to_string())).unwrap();
                 }
             });
         }
@@ -361,10 +358,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     clearbtn.set_callback({
-        let clearimage = Arc::clone(&clearimage);
         move |_| {
             println!("Clear button pressed");
-            clearimage.lock().unwrap()();
+            clearimage();
         }
     });
 
@@ -392,11 +388,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new({
-        let send = send.clone();
         move |panic_info| {
             // invoke the default handler, but then display an alert message
             orig_hook(panic_info);
-            send.send(Message::Alert(format!("{panic_info}"))).unwrap();
+            SEND.get().unwrap().send(Message::Alert(format!("{panic_info}"))).unwrap();
         }
     }));
 
