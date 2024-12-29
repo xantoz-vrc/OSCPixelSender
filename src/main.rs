@@ -181,12 +181,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
 
-    let imagepath_arc : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
+    let imagepath : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
 
-    let clearimage_arc = Arc::new(Mutex::new({
+    let clearimage = Arc::new(Mutex::new({
         let mut frame = frame.clone();
         let mut wind = wind.clone();
-        let imagepath = Arc::clone(&imagepath_arc);
+        let imagepath = Arc::clone(&imagepath);
         move || {
             *(imagepath.write().unwrap()) = None;
             frame.set_image(None::<SharedImage>);
@@ -196,8 +196,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }));
 
-    // let loadimage_arc : Arc<Mutex<dyn FnMut()>> = Arc::new(Mutex::new({
-    let loadimage_arc = Arc::new(Mutex::new({
+    // let loadimage : Arc<Mutex<dyn FnMut()>> = Arc::new(Mutex::new({
+    let loadimage = Arc::new(Mutex::new({
         let frame = frame.clone();
         let mut wind = wind.clone();
         let grayscale_toggle = grayscale_toggle.clone();
@@ -205,8 +205,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let reorder_palette_toggle = reorder_palette_toggle.clone();
         let maxcolors_slider = maxcolors_slider.clone();
         let dithering_slider = dithering_slider.clone();
-        let imagepath = Arc::clone(&imagepath_arc);
-        let clearimage = Arc::clone(&clearimage_arc);
+        let imagepath = Arc::clone(&imagepath);
+        let clearimage = Arc::clone(&clearimage);
 
         move || {
             println!("loadimage called");
@@ -281,8 +281,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }));
 
     openbtn.set_callback({
-        let imagepath = Arc::clone(&imagepath_arc);
-        let loadimage = Arc::clone(&loadimage_arc);
+        let imagepath = Arc::clone(&imagepath);
+        let loadimage = Arc::clone(&loadimage);
         move |_| {
             println!("Open button pressed");
 
@@ -297,7 +297,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     clearbtn.set_callback({
-        let clearimage = Arc::clone(&clearimage_arc);
+        let clearimage = Arc::clone(&clearimage);
         move |_| {
             println!("Clear button pressed");
             clearimage.lock().unwrap()();
@@ -305,7 +305,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let loadimage_callback = {
-        let loadimage = Arc::clone(&loadimage_arc);
+        let loadimage = Arc::clone(&loadimage);
         move |_btn : &mut CheckButton| {
             loadimage.lock().unwrap()();
         }
@@ -315,8 +315,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     grayscale_output_toggle.set_callback(loadimage_callback.clone());
     reorder_palette_toggle.set_callback(loadimage_callback.clone());
 
-    maxcolors_slider.set_callback({ let loadimage = Arc::clone(&loadimage_arc); move |_| { loadimage.lock().unwrap()(); } });
-    dithering_slider.set_callback({ let loadimage = Arc::clone(&loadimage_arc); move |_| { loadimage.lock().unwrap()(); } });
+    maxcolors_slider.set_callback({ let loadimage = Arc::clone(&loadimage); move |_| { loadimage.lock().unwrap()(); } });
+    dithering_slider.set_callback({ let loadimage = Arc::clone(&loadimage); move |_| { loadimage.lock().unwrap()(); } });
 
     col.end();
     row.end();
