@@ -1,6 +1,6 @@
 pub mod mq;
 
-use fltk::{app, frame::Frame, enums::CallbackTrigger, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
+use fltk::{app, frame::Frame, enums::*, image::*, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
 use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
@@ -259,34 +259,56 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
         match || -> Result<(), Box<dyn Error>> {
             let cancel_flag = Arc::new(AtomicBool::new(false));
+            let (tx, rx) = mpsc::channel::<fltk::misc::Progress>();
 
             // New windows need to be created on the main thread, so we message the main thread
             appmsg.send({
                 let cancel_flag = Arc::clone(&cancel_flag);
                 AppMessage::CreateWindow(
                     400, 200, "Sending OSC".to_string(),
-                    Box::new(move |_win| -> Result<(), Box<dyn Error>> {
+                    Box::new(move |win| -> Result<(), Box<dyn Error>> {
                         let col = Flex::default_fill().column();
 
-                        let mut progress = fltk::misc::Progress::default_fill();
-                        progress.set_minimum(0.0);
-                        progress.set_maximum(100.0);
-                        progress.set_value(50.5);
+                        let mut progressbar = fltk::misc::Progress::default_fill();
+                        progressbar.set_minimum(0.0);
+                        progressbar.set_maximum(100.0);
+                        progressbar.set_value(0.0);
+
+                        win.set_callback({
+                            let cancel_flag = Arc::clone(&cancel_flag);
+                            move |win| {
+                                if app::event() == Event::Close {
+                                    println!("Send OSC window got Event::close");
+                                    cancel_flag.store(true, Ordering::Relaxed);
+                                    Window::delete(win.clone());
+                                    fltk::app::awake();
+                                }
+                            }
+                        });
 
                         let mut cancel_btn = Button::default().with_label("Cancel");
-                        cancel_btn.set_callback(move |_btn| {
-                            cancel_flag.store(true, Ordering::Relaxed);
-                            // TODO:
-                            //Window::delete(*win);
+                        cancel_btn.set_callback({
+                            let cancel_flag = Arc::clone(&cancel_flag);
+                            let win = win.clone();
+                            move |_btn| {
+                                println!("Send OSC window cancel button pressed");
+                                cancel_flag.store(true, Ordering::Relaxed);
+                                Window::delete(win.clone());
+                                fltk::app::awake();
+                            }
                         });
 
                         col.end();
+
+                        tx.send(progressbar)?;
 
                         Ok(())
                     })
                 )
             })?;
             fltk::app::awake();
+
+            let mut progressbar = rx.recv()?;
 
             let duration = Duration::from_secs_f32(sleep_time);
 
@@ -336,10 +358,13 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                 clk = !clk;
                 count += 1;
 
-                println!("Sent pixel chunk {}/{} {:.1}%",
-                         count, countmax, ((count as f64)/(countmax as f64))*100.0);
+                let progress = ((count as f64)/(countmax as f64))*100.0;
+                let msg = format!("Sent pixel chunk {}/{} {:.1}%", count, countmax, progress);
+                println!("{}", msg);
+                progressbar.set_label(&msg);
+                progressbar.set_value(progress);
 
-                // TODO: Progress bar or something
+                fltk::app::awake();
 
                 thread::sleep(duration);
             }
