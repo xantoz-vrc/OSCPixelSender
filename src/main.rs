@@ -50,7 +50,7 @@ pub enum BgMessage{
         multiplier: u8,
     },
     ClearImage,
-    SendOSC,
+    SendOSC(f32),
     Quit,
 }
 
@@ -580,11 +580,11 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         },
                     };
                 },
-                BgMessage::SendOSC => {
+                BgMessage::SendOSC(speed) => {
                     match || -> Result<(), String> {
                         let (indexes, palette) = indexes_and_palette.as_ref()
                             .ok_or("Indexes and palette not generated yet")?;
-                        send_osc(&appmsg, indexes, palette, 4.0f32)
+                        send_osc(&appmsg, indexes, palette, speed)
                             .map_err(|err| format!("send_osc failed: {err}"))?;
                         Ok(())
                     }() {
@@ -716,7 +716,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x\t|6x\t|7x\t|8x");
     multiplier_menubutton.set_value(4);
 
+    // TODO: a separator to separate the OSC stuff
+
+    const OSC_SPEED_DEFAULT: f64 = 2.0;
     let mut send_osc_btn = Button::default().with_label("Send OSC").with_id("send_osc_button");
+    let mut osc_speed_slider = HorValueSlider::default().with_label("OSC updates/second").with_id("osc_speed_slider");
+    osc_speed_slider.set_range(0.5, 20.0);
+    osc_speed_slider.set_step(0.5, 1);
+    osc_speed_slider.set_value(OSC_SPEED_DEFAULT);
 
     row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
@@ -732,6 +739,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&scale_input, 30);
     col.fixed(&multiplier_menubutton, 30);
     col.fixed(&send_osc_btn, 50);
+    col.fixed(&osc_speed_slider, 30);
 
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
     let (joinhandle, bg) = start_background_process(&appmsg);
@@ -811,7 +819,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let bg = bg.clone();
         let appmsg = appmsg.clone();
         move |_| {
-            let result = bg.send(BgMessage::SendOSC);
+            let speed = osc_speed_slider.value() as f32;
+            let result = bg.send(BgMessage::SendOSC(speed));
             if result.is_err() {
                 let msg = format!("Send OSC button error: {:?}", result);
                 eprintln!("{}", msg);
