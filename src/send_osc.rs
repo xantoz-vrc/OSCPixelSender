@@ -278,68 +278,8 @@ pub fn send_osc(
         // TODO: More efficient encoding for the case where the palette color count is 254 or lower for 8bpp, 15 or lower for 4bpp, 3 for 2bpp (kinda pointless. And not applicable for 1bpp:
         //  instead of duplicated byte as escape, use a 255 byte as the escape as that won't appear in the uncompressed bytestream when this is true. (could work without this req too, but then having to escape every 255 as 255, 1 is going to be inefficient)
 
-/*
-        let mut count: u8 = 1;
-        let mut current_value: u8 = indexes[0];
-        for &value in &indexes[1..] {
-            // determine whether or not we are at the end two bytes of a
-            // BYTES_PER_SEND chunk and then simply put two bytes as is, because
-            // we cannot fit an escaped RLE sequence thingamajig here
-            if (result.len() % BYTES_PER_SEND) >= (BYTES_PER_SEND - 2) {
-                result.push(value);
-                count = 1;
-                current_value = value;
-                // FIXME: I think we might start counting for a value that's already been inserted here?
-            } else if value == current_value {
-                if let Some(x) = count.checked_add(1) {
-                    count = x;
-                } else {
-                    // We can no longer fit the count in a single byte if we are to go on, we are forced to start anew
-                    result.push(current_value);
-                    result.push(current_value);
-                    result.push(count);
-                    count = 1;
-                }
-            } else {
-                if count > 1 {
-                    result.push(current_value);
-                    result.push(current_value);
-                    result.push(count);
-                    current_value = value;
-                    count = 1;
-                } else {
-                    result.push(count);
-                }
-            }
-        }
-        if count > 1 {          // FIXME: Verify that this truly works despite the logic above for handling the last two bytes in a 16-byte chunk and the handling of overflow in count
-            result.push(current_value);
-            result.push(current_value);
-            result.push(count);
-        } else {
-            result.push(current_value);
-        }
-*/
-
         let mut count: u8 = 0;
         let mut current_value: Option<u8> = None;
-        // let mut maybe_push = |value: u8| {
-        //     if let Some(curval) = current_value {
-        //         if count > 1 {
-        //             result.push(curval);
-        //             result.push(curval);
-        //             result.push(count);
-        //             current_value = Some(value);
-        //             count = 1;
-        //         } else if count == 1 {
-        //             result.push(curval);
-        //             current_value = Some(value);
-        //             count = 1;
-        //         } else {
-        //             panic!("current_value is Some(x) but count == 0");
-        //         }
-        //     }
-        // };
         fn maybe_push(
             result: &mut Vec<u8>,
             current_value: &mut Option<u8>,
