@@ -134,7 +134,7 @@ fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : 
         }
     } else {
         for (&index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
-            let index : u8 = index*palette.count as u8;
+            let index : u8 = index*(255/(palette.count-1)) as u8;
             pixel.copy_from_slice(&[index, index, index, index]);
         }
     }
