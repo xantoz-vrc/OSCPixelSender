@@ -97,12 +97,12 @@ fn get_file() -> Option<PathBuf> {
     }
 }
 
-fn scale_image(bytes: &[u8],
+fn scale_image(bytes: Vec<u8>,
                width: usize, height: usize,
                nwidth: usize, nheight: usize) -> Result<(Vec<u8>, usize, usize), Box<dyn Error>> {
     assert!(bytes.len() == width * height * 4); // RGBA format assumed
 
-    let img = image::RgbaImage::from_raw(width as u32, height as u32, bytes.to_vec()).ok_or("bytes not big enough for width and height")?;
+    let img = image::RgbaImage::from_raw(width as u32, height as u32, bytes).ok_or("bytes not big enough for width and height")?;
     let dimg = image::DynamicImage::from(img);
     let newimg = dimg.resize_to_fill(nwidth as u32, nheight as u32, imageops::FilterType::Lanczos3).into_rgba8();
 
@@ -677,7 +677,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 .map_err(|err| format!("rgbaimage_to_bytes failed: {err:?}"))?;
 
                             if scaling {
-                                (bytes, width, height) = scale_image(&bytes, width, height, scale, scale)
+                                (bytes, width, height) = scale_image(bytes, width, height, scale, scale)
                                     .map_err(|err| format!("scale_image failed: {err:?}"))?;
                             }
 
