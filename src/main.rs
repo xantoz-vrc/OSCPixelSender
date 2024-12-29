@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::Mutex;
+use std::thread;
 
 fn get_file() -> Option<PathBuf> {
     let mut nfc = dialog::NativeFileChooser::new(dialog::FileDialogType::BrowseFile);
@@ -188,8 +189,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }));
 
+    // let loadimage_arc : Arc<Mutex<dyn FnMut()>> = Arc::new(Mutex::new({
     let loadimage_arc = Arc::new(Mutex::new({
-        let mut fr = frame.clone();
+        let fr = frame.clone();
         let mut wn = wind.clone();
         let gr_toggle = grayscale_toggle.clone();
         let gr_output_toggle = grayscale_output_toggle.clone();
@@ -197,57 +199,69 @@ fn main() -> Result<(), Box<dyn Error>> {
         let cslider = maxcolors_slider.clone();
         let imagepath = Arc::clone(&imagepath_arc);
         let clearimage = Arc::clone(&clearimage_arc);
+
         move || {
             println!("loadimage called");
 
-            // Clone the path, we do not want to keep holding the
-            // lock. It can lead to deadlock with clearimage otherwise
-            // for one.
-            let path = {
-                let imagepath_readguard = imagepath.read().unwrap();
-                let Some(path) = &*imagepath_readguard else {
-                    eprintln!("loadimage: No file selected/imagepath not set");
-                    return;
-                };
-                path.clone()
-            };
+            thread::spawn({
+                let mut fr = fr.clone();
+                let gr_toggle = gr_toggle.clone();
+                let gr_output_toggle = gr_output_toggle.clone();
+                let reorder_palette_toggle = reorder_palette_toggle.clone();
+                let cslider = cslider.clone();
+                let imagepath = Arc::clone(&imagepath);
+                let clearimage = Arc::clone(&clearimage);
+                move || {
+                    // Clone the path, we do not want to keep holding the
+                    // lock. It can lead to deadlock with clearimage otherwise
+                    // for one.
+                    let path = {
+                        let imagepath_readguard = imagepath.read().unwrap();
+                        let Some(path) = &*imagepath_readguard else {
+                            eprintln!("loadimage: No file selected/imagepath not set");
+                            return;
+                        };
+                        path.clone()
+                    };
 
-            let loadresult = SharedImage::load(&path);
-            let Ok(image) = loadresult else {
-                let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
-                eprintln!("{}", msg);
-                dialog::alert_default(&msg);
-                clearimage.lock().unwrap()();
-                return;
-            };
+                    let loadresult = SharedImage::load(&path);
+                    let Ok(image) = loadresult else {
+                        let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
+                        eprintln!("{}", msg);
+                        dialog::alert_default(&msg);
+                        clearimage.lock().unwrap()();
+                        return;
+                    };
 
-            println!("Loaded image {path:?}");
+                    println!("Loaded image {path:?}");
 
-            println!("(before scale) w,h: {},{}", image.width(), image.height());
-            //image.scale(256, 256, true, true);
-            println!("(after scale) w,h: {},{}", image.width(), image.height());
+                    println!("(before scale) w,h: {},{}", image.width(), image.height());
+                    //image.scale(256, 256, true, true);
+                    println!("(after scale) w,h: {},{}", image.width(), image.height());
 
-            let bresult = sharedimage_to_bytes(&image, gr_toggle.is_checked());
-            let Ok((bytes, width, height)) = bresult else {
-                let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
-                eprintln!("{}", msg);
-                dialog::alert_default(&msg);
-                return;
-            };
+                    let bresult = sharedimage_to_bytes(&image, gr_toggle.is_checked());
+                    let Ok((bytes, width, height)) = bresult else {
+                        let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
+                        eprintln!("{}", msg);
+                        dialog::alert_default(&msg);
+                        return;
+                    };
 
-            let qresult = quantize_image(&bytes, width, height, cslider.value() as i32, gr_output_toggle.is_checked(), reorder_palette_toggle.is_checked());
-            let Ok(rgbimage) = qresult else {
-                let msg = format!("Quantization failed: {qresult:?}");
-                eprintln!("{}", msg);
-                dialog::alert_default(&msg);
-                return;
-            };
+                    let qresult = quantize_image(&bytes, width, height, cslider.value() as i32, gr_output_toggle.is_checked(), reorder_palette_toggle.is_checked());
+                    let Ok(rgbimage) = qresult else {
+                        let msg = format!("Quantization failed: {qresult:?}");
+                        eprintln!("{}", msg);
+                        dialog::alert_default(&msg);
+                        return;
+                    };
 
-            fr.set_image(Some(rgbimage));
-            fr.set_label(&path.to_string_lossy());
-            fr.changed();
+                    fr.set_image(Some(rgbimage));
+                    fr.set_label(&path.to_string_lossy());
+                    fr.changed();
+                }
+            });
 
-            wn.set_label(&path.to_string_lossy());
+            wn.set_label(&imagepath.read().unwrap().as_deref().unwrap().to_string_lossy());
         }
     }));
 
