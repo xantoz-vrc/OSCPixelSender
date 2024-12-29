@@ -724,7 +724,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // scale_input.set_trigger(CallbackTrigger::Changed);
     scale_input.set_trigger(CallbackTrigger::EnterKey);
     scale_input.set_value(SCALE_DEFAULT);
-    scale_input.set_maximum_size(5);
+    scale_input.set_maximum_size(4);
     let mut resize_type_choice = menu::Choice::default()
         .with_label("Scaling fit:")
         .with_id("resize_type_choice");
