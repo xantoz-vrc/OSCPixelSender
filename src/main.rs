@@ -451,7 +451,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
     let (joinhandle, bg) = start_background_process(&appmsg);
 
-    fn updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSender::<BgMessage>) -> () {
+    fn updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSender::<BgMessage>, no_replace: bool) -> () {
         match || -> Result<(), String> {
             let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
             let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
@@ -494,8 +494,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 },
             };
-            bg.send_or_replace_if(BgMessage::is_update, msg)
-                .map_err(|err| format!("Send error: {err}"))?;
+            if no_replace {
+                bg.send(msg)
+            } else {
+                bg.send_or_replace_if(BgMessage::is_update, msg)
+            }.map_err(|err| format!("Send error: {err}"))?;
+
             Ok(())
         }() {
             Ok(()) => (),
@@ -530,7 +534,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
 
-            updateimage(&appmsg, &bg);
+            updateimage(&appmsg, &bg, true);
         }
     });
 
@@ -549,13 +553,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
-    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
-    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
-    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
-    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
-    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
-    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b); } });
+    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
+    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
+    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
+    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
+    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
+    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
+    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { updateimage(&a, &b, false); } });
     scale_input.set_callback({
         let bg = bg.clone();
         let appmsg = appmsg.clone();
@@ -563,7 +567,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let value = i.value();
             println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
             if value.len() > 0 {
-                updateimage(&appmsg, &bg);
+                updateimage(&appmsg, &bg, false);
             } else {
                 i.set_value(SCALE_DEFAULT);
             }
@@ -575,7 +579,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |m| {
             println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
             m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
-            updateimage(&appmsg, &bg);
+            updateimage(&appmsg, &bg, false);
         }
     });
 
