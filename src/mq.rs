@@ -2,38 +2,6 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::collections::vec_deque::{VecDeque};
 use std::error::Error;
 
-pub struct SendError<T> {
-    pub data: T,
-    pub message: String,
-}
-
-impl<T> std::fmt::Debug for SendError<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SendError<{}> {{ data: .., message: {:?} }}", std::any::type_name::<T>(), self.message)
-    }
-}
-
-impl<T> std::fmt::Display for SendError<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl<T> Error for SendError<T> {}
-
-#[derive(Debug)]
-pub struct RecvError {
-    pub message: String,
-}
-
-impl std::fmt::Display for RecvError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl Error for RecvError {}
-
 #[derive(Debug, Clone)]
 pub struct MessageQueueSender<T> {
     queue: Arc<(Mutex<VecDeque<T>>, Condvar)>,
@@ -136,3 +104,36 @@ impl<T> MessageQueueReceiver<T> {
         Ok(guard.pop_front().unwrap())
     }
 }
+
+// ERROR HANDLING
+pub struct SendError<T> {
+    pub data: T,
+    pub message: String,
+}
+
+impl<T> std::fmt::Debug for SendError<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SendError<{}> {{ data: .., message: {:?} }}", std::any::type_name::<T>(), self.message)
+    }
+}
+
+impl<T> std::fmt::Display for SendError<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl<T> Error for SendError<T> {}
+
+#[derive(Debug)]
+pub struct RecvError {
+    pub message: String,
+}
+
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for RecvError {}
