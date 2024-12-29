@@ -40,39 +40,49 @@ pub fn save_png(
         }
     };
 
+    // We need to do the conversion per line, because it might happen
+    // that the width doesn't divide evenly when we are using 4bpp,
+    // 2bpp or 1bpp modes. In that case each line must be padded out
+    // some pixels.
     let data: &[u8] = match bitdepth {
         png::BitDepth::One => {
             png_data = indexes
-                .chunks(8)
-                .map(|p|
-                     p.get(0).map_or(0, |v| (v & 0b1) << 7) |
-                     p.get(1).map_or(0, |v| (v & 0b1) << 6) |
-                     p.get(2).map_or(0, |v| (v & 0b1) << 5) |
-                     p.get(3).map_or(0, |v| (v & 0b1) << 4) |
-                     p.get(4).map_or(0, |v| (v & 0b1) << 3) |
-                     p.get(5).map_or(0, |v| (v & 0b1) << 2) |
-                     p.get(6).map_or(0, |v| (v & 0b1) << 1) |
-                     p.get(7).map_or(0, |v| (v & 0b1) << 0)
+                .chunks_exact(u32::try_into(width.into())?)
+                .flat_map(|line|
+                          line.chunks(8)
+                          .map(|p|
+                               p.get(0).map_or(0, |v| (v & 0b1) << 7) |
+                               p.get(1).map_or(0, |v| (v & 0b1) << 6) |
+                               p.get(2).map_or(0, |v| (v & 0b1) << 5) |
+                               p.get(3).map_or(0, |v| (v & 0b1) << 4) |
+                               p.get(4).map_or(0, |v| (v & 0b1) << 3) |
+                               p.get(5).map_or(0, |v| (v & 0b1) << 2) |
+                               p.get(6).map_or(0, |v| (v & 0b1) << 1) |
+                               p.get(7).map_or(0, |v| (v & 0b1) << 0))
                 ).collect();
             &png_data
         },
         png::BitDepth::Two => {
             png_data = indexes
-                .chunks(4)
-                .map(|p|
-                     p.get(0).map_or(0, |v| (v & 0b11) << 6) |
-                     p.get(1).map_or(0, |v| (v & 0b11) << 4) |
-                     p.get(2).map_or(0, |v| (v & 0b11) << 2) |
-                     p.get(3).map_or(0, |v| (v & 0b11) << 0)
+                .chunks_exact(u32::try_into(width.into())?)
+                .flat_map(|line|
+                          line.chunks(4)
+                          .map(|p|
+                               p.get(0).map_or(0, |v| (v & 0b11) << 6) |
+                               p.get(1).map_or(0, |v| (v & 0b11) << 4) |
+                               p.get(2).map_or(0, |v| (v & 0b11) << 2) |
+                               p.get(3).map_or(0, |v| (v & 0b11) << 0))
                 ).collect();
             &png_data
         },
         png::BitDepth::Four => {
             png_data = indexes
-                .chunks(2)
-                .map(|p|
-                     p.get(0).map_or(0, |v| (v & 0b1111) << 4) |
-                     p.get(1).map_or(0, |v| (v & 0b1111) << 0)
+                .chunks_exact(u32::try_into(width.into())?)
+                .flat_map(|line|
+                          line.chunks(2)
+                          .map(|p|
+                               p.get(0).map_or(0, |v| (v & 0b1111) << 4) |
+                               p.get(1).map_or(0, |v| (v & 0b1111) << 0))
                 ).collect();
             &png_data
         },
