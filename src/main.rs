@@ -3,13 +3,11 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
 use rayon::prelude::*;
-use std::sync::RwLock;
 use std::thread;
 use std::panic;
 use std::string::String;
 use image::{self, imageops};
 use std::sync::mpsc;
-use std::sync::OnceLock;
 
 #[allow(unused_macros)]
 macro_rules! function {
@@ -32,6 +30,13 @@ fn print_type_of<T>(_: &T) {
 pub enum AppMessage {
     SetTitle(String),
     Alert(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum BgMessage{
+    LoadImage(PathBuf),
+    UpdateImage,
+    ClearImage,
 }
 
 fn get_file() -> Option<PathBuf> {
@@ -194,6 +199,173 @@ fn palette_to_rgbimage(palette: &[quantizr::Color], grayscale_output: bool) -> R
     Ok(RgbImage::new(&fb, width, height, ColorDepth::Rgba8)?)
 }
 
+// TODO: Make these into macros so they can have printouts of the function and line on where they were used or so in their error messages
+fn try_send<T: std::any::Any>(sender: &mpsc::Sender<T>, msg: T) -> Result<(), String> {
+    sender.send(msg).map_err(|err| format!("Send error {err:?}"))?;
+    if std::any::TypeId::of::<AppMessage>() == std::any::TypeId::of::<T>() {
+        fltk::app::awake();
+    }
+    Ok(())
+}
+
+fn send_noerr<T: std::any::Any>(sender: &mpsc::Sender<T>, msg: T) -> () {
+    match try_send(sender, msg) {
+        Ok(()) => (),
+        Err(msg) => eprintln!("try_send failed: {msg}"),
+    }
+}
+
+fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
+    let appmsg = appmsg_sender.clone();
+    let (sender, receiver) = mpsc::channel::<BgMessage>();
+    let sender_return = sender.clone();
+
+    thread::spawn(move || {
+        let mut imagepath: Option<PathBuf> = None;
+
+        for msg in receiver {
+            match msg {
+                BgMessage::LoadImage(path) => {
+                    imagepath = Some(path);
+                },
+                BgMessage::ClearImage => {
+                    match || -> Result<(), String> {
+                        let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                        let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
+
+                        imagepath = None;
+
+                        frame.set_image(None::<SharedImage>);
+                        frame.set_label("Clear");
+                        frame.changed();
+
+                        palette_frame.set_image(None::<RgbImage>);
+                        palette_frame.changed();
+
+                        fltk::app::redraw();
+
+                        try_send(&appmsg, AppMessage::SetTitle("Clear".to_string()))?;
+
+                        Ok(())
+                    }() {
+                        Ok(()) => (),
+                        Err(errmsg) => {
+                            let msg = format!("ClearImage fail:\n{errmsg}");
+                            eprintln!("{}", msg);
+                            send_noerr(&appmsg, AppMessage::Alert(msg));
+                        }
+                    }
+                },
+                BgMessage::UpdateImage => {
+                    match || -> Result<(), String> {
+                        let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                        let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
+                        let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
+                        let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
+                        let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").ok_or("widget_from_id fail")?;
+                        let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").ok_or("widget_from_id fail")?;
+                        let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").ok_or("widget_from_id fail")?;
+                        let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
+                        let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
+                        let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
+                        let multiplier_menubutton: menu::MenuButton = app::widget_from_id("multiplier_menubutton").ok_or("widget_from_id fail")?;
+
+                        let Some(ref path) = imagepath else {
+                            eprintln!("loadimage: No file selected/imagepath not set");
+                            return Ok(());
+                        };
+
+                        // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
+                        //       We should only convert to FLTK image format at the very end
+                        let image = SharedImage::load(&path).map_err(|err| format!("Image load for image {path:?} failed: {err:?}"))?;
+                        println!("Loaded image {path:?}");
+
+                        if !no_quantize_toggle.is_checked() {
+                            let mut bytes: Vec<u8>;
+                            let mut width: usize;
+                            let mut height: usize;
+
+                            (bytes, width, height) = sharedimage_to_bytes(&image, grayscale_toggle.is_checked())
+                                .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
+
+                            if scaling_toggle.is_checked() {
+                                let value = scale_input.value();
+                                let scale: usize = value.parse()
+                                    .map_err(|err| format!("Couldn't parse scale {value:?}: {err:?}"))?;
+                                (bytes, width, height) = scale_image(&bytes, width, height, scale, scale)
+                                    .map_err(|err| format!("scale_image failed: {err:?}"))?;
+                            }
+
+                            let (indexes, palette) = quantize_image(
+                                &bytes, width, height,
+                                maxcolors_slider.value() as i32,
+                                dithering_slider.value() as f32,
+                                reorder_palette_toggle.is_checked(),
+                            ).map_err(|err| format!("Quantization failed: {err:?}"))?;
+
+                            let mut rgbimage = quantized_image_to_rgbimage(
+                                &indexes, &palette,
+                                width, height,
+                                grayscale_output_toggle.is_checked(),
+                            ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
+
+                            if scaling_toggle.is_checked() {
+                                let multiplier: usize =
+                                    match || -> Result<_, String> {
+                                        let choice: String = multiplier_menubutton.choice()
+                                            .ok_or("No choice selected in multiplier menubutton")?;
+                                        let choice = choice.strip_suffix("x")
+                                            .ok_or_else(|| format!("No x suffix in multiplier menubutton choice: {choice:?}"))?;
+                                        let multiplier = choice.parse()
+                                            .map_err(|err| format!("Couldn't parse multiplier {choice:?}: {err:?}"))?;
+                                        Ok(multiplier)
+                                    }() {
+                                        Ok(res) => res,
+                                        Err(msg) => {
+                                            eprintln!("{}", msg);
+                                            1
+                                        },
+                                    };
+                                rgbimage.scale((width*multiplier) as i32, (height*multiplier) as i32, true, true); // Display pixelly image larger
+                            }
+                            frame.set_image(Some(rgbimage));
+
+                            let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output_toggle.is_checked())
+                                .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
+                            palette_frame.set_image_scaled(Some(palette_rgbimage));
+                            palette_frame.changed();
+                            palette_frame.redraw();
+                        } else {
+                            frame.set_image(Some(image));
+                        }
+
+                        let pathstr = path.to_string_lossy();
+                        frame.set_label(&pathstr);
+                        frame.changed();
+                        frame.redraw();
+                        fltk::app::awake();
+                        try_send(&appmsg, AppMessage::SetTitle(pathstr.to_string()))?;
+
+                        println!("Finished processing for {path:?}");
+
+                        Ok(())
+                    }() {
+                        Ok(()) => (),
+                        Err(errmsg) => {
+                            let msg = format!("UpdateImage fail:\n{errmsg}");
+                            eprintln!("{}", msg);
+                            send_noerr(&appmsg, AppMessage::Alert(msg));
+                            send_noerr(&sender, BgMessage::ClearImage);
+                        },
+                    }
+                },
+            }
+        }
+    });
+
+    sender_return
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let app = app::App::default().with_scheme(app::Scheme::Gleam);
     // let app = app::App::default().with_scheme(app::Scheme::Oxy);
@@ -259,229 +431,75 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&scale_input, 30);
     col.fixed(&multiplier_menubutton, 30);
 
-    static SEND: OnceLock<mpsc::Sender<AppMessage>> = OnceLock::new();
-    let chan: (mpsc::Sender<AppMessage>, mpsc::Receiver<AppMessage>) = mpsc::channel::<AppMessage>();
-    let recv = chan.1;
-    SEND.set(chan.0).unwrap();
+    let (appmsg_send, appmsg_recv) = mpsc::channel::<AppMessage>();
+    let bg_send = start_background_process(&appmsg_send);
 
-    static IMAGEPATH: RwLock<Option<PathBuf>> = RwLock::new(None);
+    openbtn.set_callback({
+        let bg_send = bg_send.clone();
+        let appmsg_send = appmsg_send.clone();
+        move |_| {
+            println!("Open button pressed");
 
-    fn try_send(msg: AppMessage) -> Result<(), String> {
-        SEND.get().ok_or("SEND not set")?
-            .send(msg).map_err(|err| format!("Send error {err:?}"))?;
-        fltk::app::awake();
-        Ok(())
-    }
+            let Some(path) = get_file() else {
+                eprintln!("No file selected/cancelled");
+                return;
+            };
 
-    fn send_noerr(msg: AppMessage) -> () {
-        match try_send(msg) {
-            Ok(()) => (),
-            Err(msg) => eprintln!("try_send failed: {msg}"),
-        }
-    }
-
-    fn clearimage() -> () {
-        match || -> Result<(), String> {
-            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
-            let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
-
-            let mut imagepath_lock = IMAGEPATH.write()
-                .map_err(|err| format!("{}: Failed to lock IMAGEPATH for writing: {err}", function!()))?;
-            *imagepath_lock = None;
-            frame.set_image(None::<SharedImage>);
-            frame.set_label("Clear");
-            frame.changed();
-
-            palette_frame.set_image(None::<RgbImage>);
-            palette_frame.changed();
-
-            fltk::app::redraw();
-
-            try_send(AppMessage::SetTitle("Clear".to_string()))?;
-
-            Ok(())
-        }() {
-            Ok(()) => (),
-            Err(msg) => {
-                eprintln!("{}", msg);
-                send_noerr(AppMessage::Alert(msg));
-            }
-        }
-    }
-
-    fn loadimage() -> () {
-        println!("loadimage called");
-
-        thread::spawn(|| {
-            match (
-                || -> Result<(), String> {
-                    let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
-                    let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
-                    let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
-                    let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
-                    let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").ok_or("widget_from_id fail")?;
-                    let reorder_palette_toggle: CheckButton = app::widget_from_id("reorder_palette_toggle").ok_or("widget_from_id fail")?;
-                    let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").ok_or("widget_from_id fail")?;
-                    let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
-                    let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
-                    let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
-                    let multiplier_menubutton: menu::MenuButton = app::widget_from_id("multiplier_menubutton").ok_or("widget_from_id fail")?;
-
-                    // Clone the path, we do not want to keep holding the
-                    // lock. It can lead to deadlock with clearimage otherwise
-                    // for one.
-                    let path = {
-                        let imagepath_readguard = IMAGEPATH.read()
-                            .map_err(|err| format!("{}: Error obtaining read lock for image path variable: {err:?}", function!()))?;
-                        let Some(ref path) = *imagepath_readguard else {
-                            eprintln!("loadimage: No file selected/imagepath not set");
-                            return Ok(());
-                        };
-                        path.clone()
-                    };
-
-                    // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
-                    //       We should only convert to FLTK image format at the very end
-                    let image = SharedImage::load(&path).map_err(|err| format!("Image load for image {path:?} failed: {err:?}"))?;
-                    println!("Loaded image {path:?}");
-
-                    if !no_quantize_toggle.is_checked() {
-                        let mut bytes: Vec<u8>;
-                        let mut width: usize;
-                        let mut height: usize;
-
-                        (bytes, width, height) = sharedimage_to_bytes(&image, grayscale_toggle.is_checked())
-                            .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
-
-                        if scaling_toggle.is_checked() {
-                            let value = scale_input.value();
-                            let scale: usize = value.parse()
-                                .map_err(|err| format!("Couldn't parse scale {value:?}: {err:?}"))?;
-                            (bytes, width, height) = scale_image(&bytes, width, height, scale, scale)
-                                .map_err(|err| format!("scale_image failed: {err:?}"))?;
-                        }
-
-                        let (indexes, palette) = quantize_image(
-                            &bytes, width, height,
-                            maxcolors_slider.value() as i32,
-                            dithering_slider.value() as f32,
-                            reorder_palette_toggle.is_checked(),
-                        ).map_err(|err| format!("Quantization failed: {err:?}"))?;
-
-                        let mut rgbimage = quantized_image_to_rgbimage(
-                            &indexes, &palette,
-                            width, height,
-                            grayscale_output_toggle.is_checked(),
-                        ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
-
-                        if scaling_toggle.is_checked() {
-                            let multiplier: usize =
-                                match || -> Result<_, String> {
-                                    let choice: String = multiplier_menubutton.choice()
-                                        .ok_or("No choice selected in multiplier menubutton")?;
-                                    let choice = choice.strip_suffix("x")
-                                        .ok_or_else(|| format!("No x suffix in multiplier menubutton choice: {choice:?}"))?;
-                                    let multiplier = choice.parse()
-                                        .map_err(|err| format!("Couldn't parse multiplier {choice:?}: {err:?}"))?;
-                                    Ok(multiplier)
-                                }() {
-                                    Ok(res) => res,
-                                    Err(msg) => {
-                                        eprintln!("{}", msg);
-                                        1
-                                    },
-                                };
-                            rgbimage.scale((width*multiplier) as i32, (height*multiplier) as i32, true, true); // Display pixelly image larger
-                        }
-                        frame.set_image(Some(rgbimage));
-
-                        let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output_toggle.is_checked())
-                            .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
-                        palette_frame.set_image_scaled(Some(palette_rgbimage));
-                        palette_frame.changed();
-                        palette_frame.redraw();
-                    } else {
-                        frame.set_image(Some(image));
-                    }
-
-                    let pathstr = path.to_string_lossy();
-                    frame.set_label(&pathstr);
-                    frame.changed();
-                    frame.redraw();
-                    fltk::app::awake();
-                    try_send(AppMessage::SetTitle(pathstr.to_string()))?;
-
-                    println!("Finished processing for {path:?}");
-
-                    Ok(())
-                }
-            )() {
+            match || -> Result<(), String> {
+                try_send(&bg_send, BgMessage::LoadImage(path))?;
+                try_send(&bg_send, BgMessage::UpdateImage)?;
+                Ok(())
+            }() {
                 Ok(()) => (),
                 Err(msg) => {
                     eprintln!("{}", msg);
-                    send_noerr(AppMessage::Alert(msg));
-                    clearimage();
-                },
+                    send_noerr(&appmsg_send, AppMessage::Alert(msg));
+                }
             }
-        });
-    }
-
-    fn openimage() -> () {
-        let Some(path) = get_file() else {
-            eprintln!("No file selected/cancelled");
-            return;
-        };
-
-        match || -> Result<(), String> {
-            let mut imagepath_lock = IMAGEPATH.write()
-                .map_err(|err| format!("{}: Error obtaining write lock on IMAGEPATH: {err:?}", function!()))?;
-            *imagepath_lock = Some(path);
-            Ok(())
-        }() {
-            Ok(()) => (),
-            Err(msg) => {
-                eprintln!("{}", msg);
-                send_noerr(AppMessage::Alert(msg));
-            },
-        };
-
-        loadimage();
-    }
-
-    openbtn.set_callback({
-        |_| {
-            println!("Open button pressed");
-            openimage();
         }
     });
 
     clearbtn.set_callback({
-        |_| {
+        let bg_send = bg_send.clone();
+        let appmsg_send = appmsg_send.clone();
+        move |_| {
             println!("Clear button pressed");
-            clearimage();
+
+            let sendresult = bg_send.send(BgMessage::ClearImage);
+            if sendresult.is_err() {
+                let msg = format!("{:?}", sendresult);
+                eprintln!("{}", msg);
+                send_noerr(&appmsg_send, AppMessage::Alert(msg));
+            }
         }
     });
 
-    no_quantize_toggle.set_callback(|_| loadimage());
-    grayscale_toggle.set_callback(|_| loadimage());
-    grayscale_output_toggle.set_callback(|_| loadimage());
-    reorder_palette_toggle.set_callback(|_| loadimage());
-    maxcolors_slider.set_callback(|_| loadimage());
-    dithering_slider.set_callback(|_| loadimage());
-    scaling_toggle.set_callback(|_| loadimage());
-    scale_input.set_callback(|i| {
-        let value = i.value();
-        println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
-        if value.len() > 0 {
-            loadimage();
-        } else {
-            i.set_value(SCALE_DEFAULT);
+    no_quantize_toggle.set_callback(     { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    grayscale_toggle.set_callback(       { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    grayscale_output_toggle.set_callback({ let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    reorder_palette_toggle.set_callback( { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    maxcolors_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    dithering_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    scaling_toggle.set_callback(         { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    scale_input.set_callback({
+        let bg_send = bg_send.clone();
+        move |i| {
+            let value = i.value();
+            println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
+            if value.len() > 0 {
+                send_noerr(&bg_send, BgMessage::UpdateImage)
+            } else {
+                i.set_value(SCALE_DEFAULT);
+            }
         }
     });
-    multiplier_menubutton.set_callback(|m| {
-        println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
-        m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
-        loadimage();
+    multiplier_menubutton.set_callback({
+        let bg_send = bg_send.clone();
+        move |m| {
+            println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
+            m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
+            send_noerr(&bg_send, BgMessage::UpdateImage);
+        }
     });
 
     col.end();
@@ -496,14 +514,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |panic_info| {
             // invoke the default handler, but then display an alert message
             orig_hook(panic_info);
-            send_noerr(AppMessage::Alert(format!("{panic_info}")));
+            send_noerr(&appmsg_send, AppMessage::Alert(format!("{panic_info}")));
         }
     }));
 
     // app.run()?;
 
     while app.wait() {
-        match recv.try_recv() {
+        match appmsg_recv.try_recv() {
             Ok(msg) => match msg {
                 AppMessage::Alert(s)    => dialog::alert_default(&s),
                 AppMessage::SetTitle(s) => wind.set_label(&s),
