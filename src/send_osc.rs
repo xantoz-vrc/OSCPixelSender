@@ -491,7 +491,7 @@ pub fn send_osc(
             thread::sleep(duration);
 
             // Set BPP
-            progress_message("Set BPP".to_string(), 0.0);
+            progress_message(format!("Set BPP {bitdepth}"), 0.0);
             send_cmd(&[SETPIXEL_COMMAND, // Set data pixel command (when Reset is active)
                        BITDEPTH_PIXEL, 0, // BITDEPTH_PIXEL at 2,0 controls BPP (red channel)
                        match bitdepth {
