@@ -215,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // TODO: Is this even the right widget for this? Feels wierd to have to update the label.
     let mut multiplier_menubutton = menu::MenuButton::default()
-        .with_label("Output scale multiplier")
+        .with_label("Display scale multiplier: 5x")
         .with_id("multiplier_menubutton");
     multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x");
     multiplier_menubutton.set_value(4);
@@ -440,7 +440,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     multiplier_menubutton.set_callback(|m| {
         println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
-        m.set_label(&m.choice().unwrap_or("NOT SET".to_string()));
+        m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
         loadimage();
     });
 
