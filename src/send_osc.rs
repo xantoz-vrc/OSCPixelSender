@@ -189,6 +189,7 @@ pub fn send_osc(
 
     // Defines for communication with the shader
     const SETPIXEL_COMMAND: u8 = 0x80;
+    const PALETTEWRITE_COMMAND: u8 = 0xc0;
     const BITDEPTH_PIXEL: u8 = 2;
     const PALETTECTRL_PIXEL: u8 = 3;
     const PALETTEWRIDX_PIXEL: u8 = 4;
@@ -335,18 +336,6 @@ pub fn send_osc(
             // Set palette
             match color {
                 Color::Indexed => {
-                    progress_message("Set palette write mode".to_string(), 0.0);
-                    send_cmd(&[
-                        SETPIXEL_COMMAND,
-                        PALETTECTRL_PIXEL, 0,
-                        255,  // red channel: palette active
-                        255,  // green channel: palette write mode active
-                        0,    // blue channel: unused
-                        0,    // alpha channel: unused
-                    ])?;
-                    send_clk()?;
-                    thread::sleep(duration);
-
                     progress_message("Reset palette write index".to_string(), 0.0);
                     send_cmd(&[
                         SETPIXEL_COMMAND,
@@ -360,23 +349,24 @@ pub fn send_osc(
                     thread::sleep(duration);
 
                     progress_message("Sending palette".to_string(), 0.0);
-                    send_bool("Reset", false)?;
                     // We send 5 colors at a time
                     for chunk in palette.chunks(5) {
-                        let mut data: [u8; 15] = [0; 15];
-                        debug_assert!(chunk.len()*3 <= data.len());
+                        let mut data: [u8; BYTES_PER_SEND] = [0; BYTES_PER_SEND];
+                        data[0] = PALETTEWRITE_COMMAND;
+                        debug_assert!(chunk.len()*3 <= (data.len() - 1));
                         for (i, col) in chunk.iter().enumerate() {
-                            data[i*3 + 0] = col.r;
-                            data[i*3 + 1] = col.g;
-                            data[i*3 + 2] = col.b;
+                            // Note that what looks like an off-by-one here is actually us making sure to not overwrite
+                            // PALETTEWRITE_COMMAND in the first byte
+                            data[i*3 + 1] = col.r;
+                            data[i*3 + 2] = col.g;
+                            data[i*3 + 3] = col.b;
                         }
                         send_cmd(&data)?;
                         send_clk()?;
                         thread::sleep(duration);
                     }
 
-                    progress_message("Disable palette write mode & Enable indexed colors".to_string(), 0.0);
-                    send_bool("Reset", true)?;
+                    progress_message("Enable indexed colors".to_string(), 0.0);
                     send_cmd(&[
                         SETPIXEL_COMMAND,
                         PALETTECTRL_PIXEL, 0,
@@ -410,7 +400,7 @@ pub fn send_osc(
 
             let now = std::time::Instant::now();
 
-            let chunks = indexes.chunks_exact(16);
+            let chunks = indexes.chunks_exact(BYTES_PER_SEND);
             let countmax: usize = chunks.len();
             let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
             for (count, index16) in chunks.enumerate() {
