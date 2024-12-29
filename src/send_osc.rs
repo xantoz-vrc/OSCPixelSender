@@ -186,6 +186,7 @@ pub fn send_osc(
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
     const BYTES_PER_SEND: usize = 16;
+    const PALETTE_COLORS_PER_SEND: usize = (BYTES_PER_SEND-1)/3; // -1 because 1 byte is used up as a command byte
 
     // Defines for communication with the shader
     const SETPIXEL_COMMAND: u8 = 0x80;
@@ -348,9 +349,10 @@ pub fn send_osc(
                     send_clk()?;
                     thread::sleep(duration);
 
-                    progress_message("Sending palette".to_string(), 0.0);
                     // We send 5 colors at a time
-                    for chunk in palette.chunks(5) {
+                    let palette_chunks = palette.chunks(PALETTE_COLORS_PER_SEND);
+                    let palette_numchunks = palette_chunks.len();
+                    for (n, chunk) in palette.chunks(5).enumerate() {
                         let mut data: [u8; BYTES_PER_SEND] = [0; BYTES_PER_SEND];
                         data[0] = PALETTEWRITE_COMMAND;
                         debug_assert!(chunk.len()*3 <= (data.len() - 1));
@@ -363,6 +365,10 @@ pub fn send_osc(
                         }
                         send_cmd(&data)?;
                         send_clk()?;
+
+                        let progress: f64 = ((n as f64)/(palette_numchunks as f64))*100.0;
+                        progress_message(format!("Sent palette chunk {n}/{palette_numchunks}"), progress);
+
                         thread::sleep(duration);
                     }
 
