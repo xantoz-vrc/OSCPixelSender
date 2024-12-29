@@ -1080,7 +1080,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         rle_compression: osc_rle_compression_toggle.value(),
                         ..Default::default()
                     })
-                ).map_err(|err| format!("bg.send error: {err}"))?;
+                ).map_err(|err| format!("Couldn't send message to BG thread: {err}"))?;
                 Ok(())
             }() {
                 Ok(()) => (),
