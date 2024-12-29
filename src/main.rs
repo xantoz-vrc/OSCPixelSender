@@ -203,14 +203,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             fr.set_label(&path.to_string_lossy());
             fr.changed();
 
-            // fr.set_image(Some(image));
-            // fr.set_label(&path.to_string_lossy());
-            // fr.changed();
-
-            // fr.set_image_scaled(Some(image));
-            // fr.set_label(path.to_string_lossy());
-            // fr.changed();
-
             wn.set_label(&path.to_string_lossy());
         }
     });
