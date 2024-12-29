@@ -284,6 +284,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
     let sender_return = sender.clone();
 
     let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
+        #[allow(dead_code)]
         struct ProcessedImage {
             indexes: Vec<u8>,
             palette: Vec<quantizr::Color>,
