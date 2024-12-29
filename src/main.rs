@@ -217,14 +217,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let (send, recv) = app::channel::<Message>();
 
-    let imagepath : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
+    static IMAGEPATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 
     let clearimage = Arc::new(Mutex::new({
         let mut frame = frame.clone();
-        let imagepath = Arc::clone(&imagepath);
         let send = send.clone();
         move || {
-            *(imagepath.write().unwrap()) = None;
+            *(IMAGEPATH.write().unwrap()) = None;
             frame.set_image(None::<SharedImage>);
             frame.set_label("Clear");
             frame.changed();
@@ -240,7 +239,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let reorder_palette_toggle = reorder_palette_toggle.clone();
         let maxcolors_slider = maxcolors_slider.clone();
         let dithering_slider = dithering_slider.clone();
-        let imagepath = Arc::clone(&imagepath);
         let clearimage = Arc::clone(&clearimage);
         let send = send.clone();
 
@@ -255,7 +253,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let reorder_palette_toggle = reorder_palette_toggle.clone();
                 let maxcolors_slider = maxcolors_slider.clone();
                 let dithering_slider = dithering_slider.clone();
-                let imagepath = Arc::clone(&imagepath);
                 let clearimage = Arc::clone(&clearimage);
                 let send = send.clone();
 
@@ -264,7 +261,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // lock. It can lead to deadlock with clearimage otherwise
                     // for one.
                     let path = {
-                        let imagepath_readguard = imagepath.read().unwrap();
+                        let imagepath_readguard = IMAGEPATH.read().unwrap();
                         let Some(ref path) = *imagepath_readguard else {
                             eprintln!("loadimage: No file selected/imagepath not set");
                             return;
@@ -348,7 +345,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }));
 
     openbtn.set_callback({
-        let imagepath = Arc::clone(&imagepath);
         let loadimage = Arc::clone(&loadimage);
         move |_| {
             println!("Open button pressed");
@@ -358,7 +354,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
 
-            *(imagepath.write().unwrap()) = Some(path);
+            *(IMAGEPATH.write().unwrap()) = Some(path);
             loadimage.lock().unwrap()();
         }
     });
