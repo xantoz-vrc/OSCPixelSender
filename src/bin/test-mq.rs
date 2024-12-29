@@ -11,6 +11,15 @@ pub enum Message {
     Stop,
 }
 
+impl Message {
+    fn is_update(&self) -> bool {
+        match self {
+            Self::Update(_) => true,
+            _ => false,
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let (tx, rx) = mq::mq::<Message>();
 
@@ -58,11 +67,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         println!("Processing update #{n}");
                         // thread::sleep(Duration::from_secs_f64((n as f64)/10.0));
                         thread::sleep(Duration::from_secs(2));
+                        println!("Finished update #{n}");
                     },
                     Message::Clear => {
                         clear_count += 1;
                         println!("Clear #{}!", clear_count);
                         thread::sleep(Duration::from_secs_f64(0.4));
+                        println!("Finished clear #{}!", clear_count);
                     },
                     Message::Stop => {
                         println!("Got stop message. Stopping thread.");
@@ -82,16 +93,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         let tx = tx.clone();
         move || {
             thread::sleep(Duration::from_secs(1));
-            for _i in 0..10 {
+            for _i in 0..5 {
+                println!("Send clear {}", _i+5);
                 tx.send(Message::Clear).unwrap();
                 thread::sleep(Duration::from_secs(1));
             }
+            println!("Clear thread done");
         }
     });
 
     for i in 1..100 {
         // tx.send_or_replace(Message::Update(i)).unwrap();
-        tx.send_or_replace_if(|m| *m != Message::Clear, Message::Update(i)).unwrap();
+        println!("put Update {i}");
+        // tx.send_or_replace_if(|m| *m != Message::Clear, Message::Update(i)).unwrap();
+        tx.send_or_replace_if(Message::is_update, Message::Update(i)).unwrap();
         thread::sleep(Duration::from_secs_f64(0.2));
     }
 
