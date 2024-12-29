@@ -688,8 +688,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let palette_frame = Frame::default_fill().with_id("palette_frame");
     // palette_frame.set_frame(FrameType::DownBox);
+    row.fixed(&palette_frame, 50);
+
+    let scroll = fltk::group::Scroll::default_fill();
+    row.fixed(&scroll, 300);
 
     let mut col = Flex::default_fill().column();
+    row.fixed(&col, 280);
     col.set_margin(20);
     col.set_spacing(20);
     let mut openbtn = Button::default().with_label("Open");
@@ -757,8 +762,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     osc_pixfmt_choice.set_value(0);
 
-    row.fixed(&palette_frame, 50);
-    row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
     col.fixed(&savebtn, 50);
     col.fixed(&clearbtn, 50);
@@ -891,6 +894,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    scroll.end();
     col.end();
     row.end();
     wind.end();
