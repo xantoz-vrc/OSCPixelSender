@@ -1,3 +1,9 @@
+Some sort of bit-slicey progressive mode utilizing the fact that we
+sort the palettes? Basically send the lowest bit of each pixel first,
+then the second lowest, and so on. Display in grayscale until all bits
+are in place. This would likely require some shader rework
+(potentially two shaders: one being a buffer, and the second reinterpreting that buffer as more information arrives)
+
 Replace FLTK with Iced (what COSMIC uses)?
 Other runners would be:
 Ribir (looks relatively sane),
