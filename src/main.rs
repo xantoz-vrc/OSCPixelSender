@@ -216,7 +216,7 @@ fn send_noerr<T: std::any::Any>(sender: &mpsc::Sender<T>, msg: T) -> () {
 }
 
 fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::SyncSender<BgMessage> {
-    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(1);
+    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(10);
 // fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
 //     let (sender, receiver) = mpsc::channel::<BgMessage>();
 
@@ -478,20 +478,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    no_quantize_toggle.set_callback(     { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
-    grayscale_toggle.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
-    grayscale_output_toggle.set_callback({ let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
-    reorder_palette_toggle.set_callback( { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
-    maxcolors_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
-    dithering_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
-    scaling_toggle.set_callback(         { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
+    no_quantize_toggle.set_callback(     { let bg_send = bg_send.clone(); move |_| { bg_send.try_send(BgMessage::UpdateImage).unwrap(); } });
+    grayscale_toggle.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.try_send(BgMessage::UpdateImage).unwrap(); } });
+    grayscale_output_toggle.set_callback({ let bg_send = bg_send.clone(); move |_| { bg_send.try_send(BgMessage::UpdateImage).unwrap(); } });
+    reorder_palette_toggle.set_callback( { let bg_send = bg_send.clone(); move |_| { bg_send.try_send(BgMessage::UpdateImage).unwrap(); } });
+    maxcolors_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.try_send(BgMessage::UpdateImage).unwrap(); } });
+    dithering_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.try_send(BgMessage::UpdateImage).unwrap(); } });
+    scaling_toggle.set_callback(         { let bg_send = bg_send.clone(); move |_| { bg_send.try_send(BgMessage::UpdateImage).unwrap(); } });
     scale_input.set_callback({
         let bg_send = bg_send.clone();
         move |i| {
             let value = i.value();
             println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
             if value.len() > 0 {
-                bg_send.send(BgMessage::UpdateImage).unwrap();
+                bg_send.try_send(BgMessage::UpdateImage).unwrap();
             } else {
                 i.set_value(SCALE_DEFAULT);
             }
@@ -502,7 +502,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |m| {
             println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
             m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
-            bg_send.send(BgMessage::UpdateImage).unwrap();
+            bg_send.try_send(BgMessage::UpdateImage).unwrap();
         }
     });
 
