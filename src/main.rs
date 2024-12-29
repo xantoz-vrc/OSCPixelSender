@@ -243,7 +243,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         match || -> Result<(), String> {
             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
 
-            let mut imagepath_lock = IMAGEPATH.write().map_err(|err| format!("Failed to lock IMAGEPATH for writing: {err}"))?;
+            let mut imagepath_lock = IMAGEPATH.write()
+                .map_err(|err| format!("{}: Failed to lock IMAGEPATH for writing: {err}", function!()))?;
             *imagepath_lock = None;
             frame.set_image(None::<SharedImage>);
             frame.set_label("Clear");
@@ -281,7 +282,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // for one.
                     let path = {
                         let imagepath_readguard = IMAGEPATH.read()
-                            .map_err(|err| format!("Error obtaining read lock for image path variable: {err:?}"))?;
+                            .map_err(|err| format!("{}: Error obtaining read lock for image path variable: {err:?}", function!()))?;
                         let Some(ref path) = *imagepath_readguard else {
                             eprintln!("loadimage: No file selected/imagepath not set");
                             return Ok(());
