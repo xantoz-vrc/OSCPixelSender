@@ -283,6 +283,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     fn clearimage() -> () {
         match || -> Result<(), String> {
             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+            let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
             let mut imagepath_lock = IMAGEPATH.write()
                 .map_err(|err| format!("{}: Failed to lock IMAGEPATH for writing: {err}", function!()))?;
@@ -290,6 +291,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             frame.set_image(None::<SharedImage>);
             frame.set_label("Clear");
             frame.changed();
+
+            palette_frame.set_image(None::<RgbImage>);
+            palette_frame.changed();
+
+            fltk::app::redraw();
 
             try_send(AppMessage::SetTitle("Clear".to_string()))?;
 
