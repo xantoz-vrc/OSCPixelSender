@@ -153,11 +153,11 @@ fn scale_image_bilinear(src: &[u8],
             if width > height {
                 // Wider than tall
                 let aspect_ratio: F = (width as F)/(height as F);
-                (nwidth, ((nheight as F)/aspect_ratio) as usize)
+                (nwidth, ((nheight as F)/aspect_ratio).round() as usize)
             } else {
                 // Taller than wide (or square)
                 let aspect_ratio: F = (height as F)/(width as F);
-                (((nwidth as F)/aspect_ratio) as usize, nheight)
+                (((nwidth as F)/aspect_ratio).round() as usize, nheight)
             }
         },
     };
