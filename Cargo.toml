@@ -8,7 +8,7 @@ inherits = "release"
 debug = true
 
 [dependencies]
-fltk = "^1.4"
+fltk = { version = "^1.4", features = ["fltk-bundled"] }
 image = "0.25.2"
 png = "0.17.13"
 quantizr = "1.4.2"
