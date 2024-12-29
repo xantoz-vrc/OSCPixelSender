@@ -132,12 +132,13 @@ pub enum ResizeType {
 }
 
 // Home-cooked bilinear scaling
+// TODO: Gamma-correct version? (convert into linear color-space before scaling, then convert back)
 fn scale_image_bilinear(src: &[u8],
                         width: u32, height: u32,
                         nwidth: u32, nheight: u32,
                         resize: ResizeType
 ) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
-    type F = f64;
+    type F = f32;
 
     let width = width as usize;
     let height = height as usize;
