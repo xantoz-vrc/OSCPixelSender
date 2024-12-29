@@ -70,7 +70,6 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
     });
     dbg!(&permutation);
 
-
     /*
     let new_palette : Vec<quantizr::Color> =
         permutation.iter()
@@ -172,58 +171,54 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             // let path = "F:/tw20230603-1.jpg";
 
-            let maybe_path = get_file();
-            if !maybe_path.is_some() {
+            let Some(path) = get_file() else {
                 eprintln!("No file selected");
                 return;
-            }
-
-            let path = &maybe_path.unwrap();
-
-            match SharedImage::load(path) {
-                Err(err) => {
-                    let msg = format!("Image load for image {path:?} failed: {err:?}");
-                    eprintln!("{}", msg);
-                    dialog::alert_default(&msg);
-                },
-                Ok(/*mut*/ image) => {
-                    println!("Loaded image {path:?}");
-
-                    println!("(before scale) w,h: {},{}", image.width(), image.height());
-                    //image.scale(256, 256, true, true);
-                    println!("(after scale) w,h: {},{}", image.width(), image.height());
-
-                    let bresult = sharedimage_to_bytes(&image, false);
-                    let Ok((bytes, width, height)) = bresult else {
-                        let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
-                        eprintln!("{}", msg);
-                        dialog::alert_default(&msg);
-                        return;
-                    };
-
-                    let qresult = quantize_image(&bytes, width, height, 16, false);
-                    let Ok(rgbimage) = qresult else {
-                        let msg = format!("Quantization failed: {qresult:?}");
-                        eprintln!("{}", msg);
-                        dialog::alert_default(&msg);
-                        return;
-                    };
-
-                    fr.set_image(Some(rgbimage));
-                    fr.set_label(&path.to_string_lossy());
-                    fr.changed();
-
-                    // fr.set_image(Some(image));
-                    // fr.set_label(&path.to_string_lossy());
-                    // fr.changed();
-
-                    // fr.set_image_scaled(Some(image));
-                    // fr.set_label(path.to_string_lossy());
-                    // fr.changed();
-
-                    wn.set_label(&path.to_string_lossy());
-                },
             };
+
+            let loadresult = SharedImage::load(&path);
+            let Ok(image) = loadresult else {
+                let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
+                eprintln!("{}", msg);
+                dialog::alert_default(&msg);
+                return;
+            };
+
+            println!("Loaded image {path:?}");
+
+            println!("(before scale) w,h: {},{}", image.width(), image.height());
+            //image.scale(256, 256, true, true);
+            println!("(after scale) w,h: {},{}", image.width(), image.height());
+
+            let bresult = sharedimage_to_bytes(&image, false);
+            let Ok((bytes, width, height)) = bresult else {
+                let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
+                eprintln!("{}", msg);
+                dialog::alert_default(&msg);
+                return;
+            };
+
+            let qresult = quantize_image(&bytes, width, height, 16, false);
+            let Ok(rgbimage) = qresult else {
+                let msg = format!("Quantization failed: {qresult:?}");
+                eprintln!("{}", msg);
+                dialog::alert_default(&msg);
+                return;
+            };
+
+            fr.set_image(Some(rgbimage));
+            fr.set_label(&path.to_string_lossy());
+            fr.changed();
+
+            // fr.set_image(Some(image));
+            // fr.set_label(&path.to_string_lossy());
+            // fr.changed();
+
+            // fr.set_image_scaled(Some(image));
+            // fr.set_label(path.to_string_lossy());
+            // fr.changed();
+
+            wn.set_label(&path.to_string_lossy());
         }
     });
 
