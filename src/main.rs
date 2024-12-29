@@ -83,9 +83,6 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
     dbg!(new_palette.iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
 
     // Trying out fancy rayon parallel iterators
-    // let new_indexes : Vec<u8> = indexes.par_iter().map(
-    //     |ic| permutation[*ic as usize] as u8
-    // ).collect();
     let new_indexes : Vec<u8> = indexes.par_iter().map(
         |ic| permutation.iter().position(|&r| r == *ic as usize).unwrap_or_default() as u8
     ).collect();
