@@ -157,12 +157,12 @@ fn create_progressbar_window(
     Ok((cancel_flag, win, progressbar))
 }
 
-
 #[derive(Debug, Clone, Default)]
 pub struct SendOSCOpts {
     pub pixfmt: PixFmt,
     pub msgs_per_second: f64,
     pub linesync: bool,
+    pub rle_compression: bool,
 }
 
 pub fn send_osc(
