@@ -275,6 +275,9 @@ pub fn send_osc(
     if options.rle_compression {
         let mut result: Vec<u8> = Vec::new();
 
+        // TODO: More efficient encoding for the case where the palette color count is 254 or lower for 8bpp, 15 or lower for 4bpp, 3 for 2bpp (kinda pointless. And not applicable for 1bpp:
+        //  instead of duplicated byte as escape, use a 255 byte as the escape as that won't appear in the uncompressed bytestream when this is true. (could work without this req too, but then having to escape every 255 as 255, 1 is going to be inefficient)
+
 /*
         let mut count: u8 = 1;
         let mut current_value: u8 = indexes[0];
