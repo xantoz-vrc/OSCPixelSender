@@ -3,6 +3,9 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
 use rayon::prelude::*;
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::Mutex;
 
 fn get_file() -> Option<PathBuf> {
     let mut nfc = dialog::NativeFileChooser::new(dialog::FileDialogType::BrowseFile);
@@ -149,27 +152,32 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut openbtn = Button::default().with_label("Open");
     let mut clearbtn = Button::default().with_label("Clear");
 
-    let grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting");
-    let grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale");
+    let mut grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting");
+    let mut grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale");
 
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
+    col.fixed(&grayscale_toggle, 30);
+    col.fixed(&grayscale_output_toggle, 30);
 
-    openbtn.set_callback({
+    let imagepath_arc : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
+
+    let loadimage_arc = Arc::new(Mutex::new({
         let mut fr = frame.clone();
         let mut wn = wind.clone();
         let gr_toggle = grayscale_toggle.clone();
         let gr_output_toggle = grayscale_output_toggle.clone();
-        move |_| {
-            println!("Open button pressed");
+        let imagepath = Arc::clone(&imagepath_arc);
+        move || {
+            println!("loadimage called");
 
-            let Some(path) = get_file() else {
+            let Some(path) = &*(imagepath.read().unwrap()) else {
                 eprintln!("No file selected");
                 return;
             };
 
-            let loadresult = SharedImage::load(&path);
+            let loadresult = SharedImage::load(path);
             let Ok(image) = loadresult else {
                 let msg = format!("Image load for image {path:?} failed: {loadresult:?}");
                 eprintln!("{}", msg);
@@ -205,16 +213,43 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             wn.set_label(&path.to_string_lossy());
         }
+    }));
+
+    openbtn.set_callback({
+        let imagepath = Arc::clone(&imagepath_arc);
+        let loadimage = Arc::clone(&loadimage_arc);
+        move |_| {
+            println!("Open button pressed");
+            *(imagepath.write().unwrap()) = get_file();
+            loadimage.lock().unwrap()();
+        }
     });
 
     clearbtn.set_callback({
         let mut fr = frame.clone();
+        let imagepath = Arc::clone(&imagepath_arc);
         move |_| {
             println!("Clear button pressed");
+
+            *(imagepath.write().unwrap()) = None;
 
             fr.set_image(None::<SharedImage>);
             fr.set_label("Clear");
             fr.changed();
+        }
+    });
+
+    grayscale_toggle.set_callback({
+        let loadimage = Arc::clone(&loadimage_arc);
+        move |_| {
+            loadimage.lock().unwrap()();
+        }
+    });
+
+    grayscale_output_toggle.set_callback({
+        let loadimage = Arc::clone(&loadimage_arc);
+        move |_| {
+            loadimage.lock().unwrap()();
         }
     });
 
