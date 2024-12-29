@@ -350,12 +350,11 @@ pub fn send_osc(
                     // We send 5 colors at a time
                     for chunk in palette.chunks(5) {
                         let mut data: [u8; 15] = [0; 15];
-                        for i in (0..data.len()).step_by(3) {
-                            let color: quantizr::Color = chunk.get(i/3).copied()
-                                .unwrap_or(quantizr::Color{r: 0, g: 0, b: 0, a: 0});
-                            data[i+0] = color.r;
-                            data[i+1] = color.g;
-                            data[i+2] = color.b;
+                        debug_assert!(chunk.len()*3 <= data.len());
+                        for (i, col) in chunk.iter().enumerate() {
+                            data[i*3 + 0] = col.r;
+                            data[i*3 + 1] = col.g;
+                            data[i*3 + 2] = col.b;
                         }
                         send_cmd(&data)?;
                         send_clk()?;
