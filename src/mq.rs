@@ -1,6 +1,5 @@
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::collections::vec_deque::{VecDeque};
-use std::marker::{Send, Sync};
 use std::error::Error;
 
 pub struct SendError<T> {
@@ -115,9 +114,6 @@ impl<T> MessageQueueSender<T> {
     }
 }
 
-unsafe impl<T: Send> Send for MessageQueueSender<T> {}
-unsafe impl<T: Send> Sync for MessageQueueSender<T> {}
-
 impl<T> MessageQueueReceiver<T> {
     fn wait_until_nonempty(&self) -> Result<MutexGuard<'_, VecDeque<T>>, RecvError> {
         let (lock, cvar) = &*self.queue;
@@ -140,6 +136,3 @@ impl<T> MessageQueueReceiver<T> {
         Ok(guard.pop_front().unwrap())
     }
 }
-
-unsafe impl<T: Send> Send for MessageQueueReceiver<T> {}
-// impl<T> !Sync for MessageQueueReceiver<T> {}
