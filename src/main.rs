@@ -270,26 +270,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    grayscale_toggle.set_callback({
+    let loadimage_callback = {
         let loadimage = Arc::clone(&loadimage_arc);
-        move |_| {
+        move |_btn : &mut CheckButton| {
             loadimage.lock().unwrap()();
         }
-    });
+    };
 
-    grayscale_output_toggle.set_callback({
-        let loadimage = Arc::clone(&loadimage_arc);
-        move |_| {
-            loadimage.lock().unwrap()();
-        }
-    });
+    grayscale_toggle.set_callback(loadimage_callback.clone());
+    grayscale_output_toggle.set_callback(loadimage_callback.clone());
+    reorder_palette_toggle.set_callback(loadimage_callback.clone());
 
-    reorder_palette_toggle.set_callback({
-        let loadimage = Arc::clone(&loadimage_arc);
-        move |_| {
-            loadimage.lock().unwrap()();
-        }
-    });
     col.end();
     row.end();
     wind.end();
