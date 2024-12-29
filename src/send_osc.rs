@@ -316,7 +316,9 @@ pub fn send_osc(
 
                 thread::sleep(duration);
             }
-            println!("Send OSC thread finished sending all");
+            if !cancel_flag.load(Ordering::Relaxed) {
+                println!("Send OSC thread finished sending all");
+            }
 
             appmsg.send(AppMessage::DeleteWindow(win))?;
             fltk::app::awake();
