@@ -3,6 +3,10 @@ name = "rust_image_fiddler"
 version = "0.1.0"
 edition = "2021"
 
+[profile.debugopt]
+inherits = "dev"
+opt-level = 3
+
 [profile.release-with-debug]
 inherits = "release"
 debug = true
