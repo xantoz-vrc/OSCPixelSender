@@ -356,7 +356,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             error_alert(&appmsg, format!("LoadImage fail:\n{errmsg}"));
                             print_err(sender.send(BgMessage::ClearImage));
                         }
-                    }
+                    };
                 },
                 BgMessage::SaveImage(path) => {
                     match || -> Result<(), String> {
@@ -381,7 +381,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     }() {
                         Ok(()) => (),
                         Err(errmsg) => error_alert(&appmsg, format!("SaveImage error:\n{errmsg}")),
-                    }
+                    };
                 },
                 BgMessage::ClearImage => {
                     match || -> Result<(), String> {
