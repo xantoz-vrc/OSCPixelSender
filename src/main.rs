@@ -617,7 +617,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // scale_input.set_trigger(CallbackTrigger::Changed);
     scale_input.set_trigger(CallbackTrigger::EnterKey);
     scale_input.set_value(SCALE_DEFAULT);
-    scale_input.set_maximum_size(1024);
+    scale_input.set_maximum_size(5);
 
     let mut multiplier_choice = menu::Choice::default()
         .with_label("Display scale multiplier:")
