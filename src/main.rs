@@ -223,6 +223,66 @@ fn quantize_image(bytes : &Vec<u8>,
     Ok(result)
 }
 
+// Pads the image after already being quantized (assumes 1 byte per pixel)
+// We do it on our own and in this manner because we wish to do it after we have quantized the image using quantizr
+fn pad_image(bytes: Vec<u8>,
+             pad_value: u8,
+             width: u32, height: u32,
+             nwidth: u32, nheight: u32
+) -> (Vec<u8>, u32, u32) {
+    let width: usize = width as usize;
+    let height: usize = height as usize;
+    let nwidth: usize = nwidth as usize;
+    let nheight: usize = nheight as usize;
+
+    println!("{}: bytes.len()={} width={width}, height={height}, nwidth={nwidth}, nheight={nheight}", function!(), bytes.len());
+
+    assert!(width * height == bytes.len(), "width={width} * height={height} != bytes.len()={}", bytes.len()); // 8 bpp indexed image input
+    assert!(nwidth >= width);
+    assert!(nheight >= height);
+
+    let mut output: Vec<u8> = bytes;
+
+    // First pad width if applicable
+    if nwidth > width {
+        let diff = nwidth - width;
+        let lpadding = diff / 2;
+        let rpadding = diff.div_ceil(2);
+        debug_assert!(lpadding + rpadding == diff);
+
+        let size_after_padding = output.len() + (output.len()/width)*diff;
+        let mut result: Vec<u8> = Vec::with_capacity(size_after_padding);
+
+        for chunk in output.chunks_exact(width) {
+            result.extend(std::iter::repeat(pad_value).take(lpadding));
+            result.extend(chunk);
+            result.extend(std::iter::repeat(pad_value).take(rpadding));
+        }
+        debug_assert!(result.len() == size_after_padding, "result.len()={}, size_after_padding={}", result.len(), size_after_padding);
+
+        output = result;
+    }
+
+    // Then pad height if applicable
+    if nheight > height {
+        let diff = nheight - height;
+        let tpadding = diff / 2;
+        let bpadding = diff.div_ceil(2);
+        debug_assert!(tpadding + bpadding == diff);
+
+        let size_after_padding = output.len() + nwidth*diff;
+        let mut result: Vec<u8> = Vec::with_capacity(size_after_padding);
+        result.extend(std::iter::repeat(pad_value).take(tpadding*nwidth));
+        result.extend(output);
+        result.extend(std::iter::repeat(pad_value).take(bpadding*nwidth));
+        debug_assert!(result.len() == size_after_padding, "result.len()={}, size_after_padding={}", result.len(), size_after_padding);
+
+        output = result;
+    }
+
+    (output, nwidth as u32, nheight as u32)
+}
+
 fn rgbaimage_to_fltk_rgbimage(image: &image::RgbaImage) -> Result<fltk::image::RgbImage, Box<dyn Error>> {
     let (w, h) = image.dimensions();
     Ok(fltk::image::RgbImage::new(image.as_raw(), w.try_into()?, h.try_into()?, ColorDepth::Rgba8)?)
@@ -446,12 +506,24 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                     .map_err(|err| format!("scale_image failed: {err:?}"))?;
                             }
 
-                            let (indexes, palette) = quantize_image(
+                            let (mut indexes, palette) = quantize_image(
                                 &bytes, width, height,
                                 maxcolors,
                                 dithering,
                                 reorder_palette,
                             ).map_err(|err| format!("Quantization failed: {err:?}"))?;
+
+                            if scaling {
+                                // Pad if needed (needed when ResizeType::ToFit was used)
+
+                                // While it would at first glance seem to make sense to handle padding directly in
+                                // scale_image that would essentially force black into the palette of all images, and
+                                // since the padding color isn't that important it's best to just do it after
+                                // quantization. For now just picking whatever color 0 is, but we could eventually try
+                                // to implement some fuzzy logic for picking the padding color.
+
+                                (indexes, width, height) = pad_image(indexes, 0u8, width, height, scale, scale);
+                            }
 
                             let mut rgbimage = quantized_image_to_fltk_rgbimage(
                                 &indexes, &palette,
