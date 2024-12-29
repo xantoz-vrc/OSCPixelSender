@@ -284,6 +284,8 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 print_err(appmsg.send(AppMessage::Alert(msg)));
                             }
                         }
+
+                        send_updateimage(&appmsg, &sender);
                     },
                     BgMessage::ClearImage => {
                         match || -> Result<(), String> {
@@ -403,7 +405,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
     (joinhandle, sender_return)
 }
 
-fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSender::<BgMessage>, no_replace: bool) -> () {
+fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSender::<BgMessage>) -> () {
     match || -> Result<(), String> {
         let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
         let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
@@ -446,11 +448,9 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
                 }
             },
         };
-        if no_replace {
-            bg.send(msg)
-        } else {
-            bg.send_or_replace_if(BgMessage::is_update, msg)
-        }.map_err(|err| format!("Send error: {err}"))?;
+
+        bg.send_or_replace_if(BgMessage::is_update, msg)
+            .map_err(|err| format!("Send error: {err}"))?;
 
         Ok(())
     }() {
@@ -553,8 +553,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     print_err(appmsg.send(AppMessage::Alert(msg)));
                 }
             }
-
-            send_updateimage(&appmsg, &bg, true);
         }
     });
 
@@ -573,13 +571,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
-    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
-    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
-    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
-    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
-    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
-    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b, false); } });
+    no_quantize_toggle.set_callback(     { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b); } });
+    grayscale_toggle.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b); } });
+    grayscale_output_toggle.set_callback({ let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b); } });
+    reorder_palette_toggle.set_callback( { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b); } });
+    maxcolors_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b); } });
+    dithering_slider.set_callback(       { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b); } });
+    scaling_toggle.set_callback(         { let a = appmsg.clone(); let b = bg.clone(); move |_| { send_updateimage(&a, &b); } });
     scale_input.set_callback({
         let bg = bg.clone();
         let appmsg = appmsg.clone();
@@ -587,7 +585,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let value = i.value();
             println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
             if value.len() > 0 {
-                send_updateimage(&appmsg, &bg, false);
+                send_updateimage(&appmsg, &bg);
             } else {
                 i.set_value(SCALE_DEFAULT);
             }
@@ -599,7 +597,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |m| {
             println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
             m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
-o            send_updateimage(&appmsg, &bg, false);
+            send_updateimage(&appmsg, &bg);
         }
     });
 
