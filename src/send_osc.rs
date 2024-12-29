@@ -306,7 +306,7 @@ pub struct SendOSCOpts {
 
 const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
-const BYTES_PER_SEND: usize = 16;
+const BYTES_PER_SEND: usize = 24;
 const PALETTE_COLORS_PER_SEND: usize = (BYTES_PER_SEND-1)/3; // -1 because 1 byte is used up as a command byte
 
 // Defines for communication with the shader
@@ -520,10 +520,10 @@ pub fn send_osc(
                     send_clk()?;
                     thread::sleep(duration);
 
-                    // We send 5 colors at a time
+                    const COLORS_AT_A_TIME: usize = (BYTES_PER_SEND.div_ceil(3)) - 1;
                     let palette_chunks = palette.chunks(PALETTE_COLORS_PER_SEND);
                     let palette_numchunks = palette_chunks.len();
-                    for (n, chunk) in palette.chunks(5).enumerate() {
+                    for (n, chunk) in palette.chunks(COLORS_AT_A_TIME).enumerate() {
                         if cancel_flag.load(Ordering::Relaxed) {
                             println!("{}", "Send OSC thread cancelled");
                             return Ok(());
