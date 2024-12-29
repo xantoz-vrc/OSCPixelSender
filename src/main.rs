@@ -274,27 +274,32 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                         progressbar.set_maximum(100.0);
                         progressbar.set_value(0.0);
 
-                        win.set_callback({
+                        let cancel_cb = {
                             let cancel_flag = Arc::clone(&cancel_flag);
-                            move |win| {
+                            let mut win = win.clone();
+                            move || {
+                                cancel_flag.store(true, Ordering::Relaxed);
+                                Window::delete(win.clone());
+                                fltk::app::awake();
+                            }
+                        };
+
+                        win.set_callback({
+                            let mut cancel_cb = cancel_cb.clone();
+                            move |_win| {
                                 if app::event() == Event::Close {
                                     println!("Send OSC window got Event::close");
-                                    cancel_flag.store(true, Ordering::Relaxed);
-                                    Window::delete(win.clone());
-                                    fltk::app::awake();
+                                    cancel_cb();
                                 }
                             }
                         });
 
                         let mut cancel_btn = Button::default().with_label("Cancel");
                         cancel_btn.set_callback({
-                            let cancel_flag = Arc::clone(&cancel_flag);
-                            let win = win.clone();
+                            let mut cancel_cb = cancel_cb.clone();
                             move |_btn| {
                                 println!("Send OSC window cancel button pressed");
-                                cancel_flag.store(true, Ordering::Relaxed);
-                                Window::delete(win.clone());
-                                fltk::app::awake();
+                                cancel_cb();
                             }
                         });
 
