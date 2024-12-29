@@ -163,6 +163,55 @@ fn create_progressbar_window(
     Ok((cancel_flag, win, progressbar))
 }
 
+// Pack bytes while cloning (even in case we don't need to pack, we still need to clone to pass the
+// picture over to the send osc thread)
+fn pack_bytes_clone(indexes: &[u8], width: usize, bitdepth: u8) -> Vec<u8> {
+    // TODO: de-duplicate code with save_png
+
+    // We need to do the conversion per line, because it might
+    // happen that the width doesn't divide evenly when we are using 4bpp, 2bpp or 1bpp modes. In
+    // that case each line must be padded out some pixels.
+    match bitdepth {
+        1 =>
+            indexes
+            .chunks_exact(width)
+            .flat_map(|line|
+                      line.chunks(8)
+                      .map(|p|
+                           p.get(0).map_or(0, |v| (v & 0b1) << 7) |
+                           p.get(1).map_or(0, |v| (v & 0b1) << 6) |
+                           p.get(2).map_or(0, |v| (v & 0b1) << 5) |
+                           p.get(3).map_or(0, |v| (v & 0b1) << 4) |
+                           p.get(4).map_or(0, |v| (v & 0b1) << 3) |
+                           p.get(5).map_or(0, |v| (v & 0b1) << 2) |
+                           p.get(6).map_or(0, |v| (v & 0b1) << 1) |
+                           p.get(7).map_or(0, |v| (v & 0b1) << 0))
+            ).collect(),
+        2 =>
+            indexes
+            .chunks_exact(width)
+            .flat_map(|line|
+                      line.chunks(4)
+                      .map(|p|
+                           p.get(0).map_or(0, |v| (v & 0b11) << 6) |
+                           p.get(1).map_or(0, |v| (v & 0b11) << 4) |
+                           p.get(2).map_or(0, |v| (v & 0b11) << 2) |
+                           p.get(3).map_or(0, |v| (v & 0b11) << 0))
+            ).collect(),
+        4 =>
+            indexes
+            .chunks_exact(width)
+            .flat_map(|line|
+                      line.chunks(2)
+                      .map(|p|
+                           p.get(0).map_or(0, |v| (v & 0b1111) << 4) |
+                           p.get(1).map_or(0, |v| (v & 0b1111) << 0))
+            ).collect(),
+        8 => indexes.to_vec(),
+        _ => panic!("Unsupported bitdepth: {bitdepth}"), // This should be unreachable unless the send_osc function is broken
+    }
+}
+
 fn rle_encode(indexes: &[u8]) -> Vec<u8> {
     // We will likely be smaller, but it probably doesn't hurt to allocate ahead of time even if we
     // waste a little memory. There is a small chance we will be larger too
@@ -290,50 +339,7 @@ pub fn send_osc(
         PixFmt::Bpp8(col) => (8, col),
     };
 
-    // TODO: de-duplicate code with save_png
-    // We need to do the conversion per line, because it might happen
-    // that the width doesn't divide evenly when we are using 4bpp,
-    // 2bpp or 1bpp modes. In that case each line must be padded out
-    // some pixels.
-    let mut indexes: Vec<u8> = match bitdepth {
-        1 =>
-            indexes
-            .chunks_exact(width.try_into()?)
-            .flat_map(|line|
-                      line.chunks(8)
-                      .map(|p|
-                           p.get(0).map_or(0, |v| (v & 0b1) << 7) |
-                           p.get(1).map_or(0, |v| (v & 0b1) << 6) |
-                           p.get(2).map_or(0, |v| (v & 0b1) << 5) |
-                           p.get(3).map_or(0, |v| (v & 0b1) << 4) |
-                           p.get(4).map_or(0, |v| (v & 0b1) << 3) |
-                           p.get(5).map_or(0, |v| (v & 0b1) << 2) |
-                           p.get(6).map_or(0, |v| (v & 0b1) << 1) |
-                           p.get(7).map_or(0, |v| (v & 0b1) << 0))
-            ).collect(),
-        2 =>
-            indexes
-            .chunks_exact(width.try_into()?)
-            .flat_map(|line|
-                      line.chunks(4)
-                      .map(|p|
-                           p.get(0).map_or(0, |v| (v & 0b11) << 6) |
-                           p.get(1).map_or(0, |v| (v & 0b11) << 4) |
-                           p.get(2).map_or(0, |v| (v & 0b11) << 2) |
-                           p.get(3).map_or(0, |v| (v & 0b11) << 0))
-            ).collect(),
-        4 =>
-            indexes
-            .chunks_exact(width.try_into()?)
-            .flat_map(|line|
-                      line.chunks(2)
-                      .map(|p|
-                           p.get(0).map_or(0, |v| (v & 0b1111) << 4) |
-                           p.get(1).map_or(0, |v| (v & 0b1111) << 0))
-            ).collect(),
-        8 => indexes.clone(),
-        _ => panic!("This should be unreachable"),
-    };
+    let mut indexes = pack_bytes_clone(&indexes[..], width.try_into()?, bitdepth);
 
     // Optionally apply RLE compression
     if options.rle_compression {
