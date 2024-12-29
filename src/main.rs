@@ -144,8 +144,8 @@ fn scale_image_bilinear(src: &[u8],
     let y_scale: F = (height as F)/(nheight as F);
 
     let mut buffer: Vec<u8> = vec![0u8; nwidth * nheight * 4];
-    // TODO: Parallelize usign rayon
-    for (i, pixel) in buffer.chunks_exact_mut(4).enumerate() {
+    // Parallelized using rayon
+    buffer.par_chunks_exact_mut(4).enumerate().for_each(|(i, pixel)| {
         type Px = [u8; 4];
         type FPx = [F; 4];
 
@@ -208,7 +208,7 @@ fn scale_image_bilinear(src: &[u8],
 
         let result: Px = result.map(|x| x as u8);
         pixel.copy_from_slice(&result);
-    }
+    });
 
     Ok((buffer, nwidth.try_into()?, nheight.try_into()?))
 }
