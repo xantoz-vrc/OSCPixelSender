@@ -302,7 +302,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
                             let Some(ref path) = imagepath else {
-                                eprintln!("loadimage: No file selected/imagepath not set");
+                                eprintln!("UpdateImage: No file selected/imagepath not set");
                                 return Ok(());
                             };
 
