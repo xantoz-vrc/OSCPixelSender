@@ -76,7 +76,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("Loaded image {path:?}");
                     let mut fr = fr1.borrow_mut();
 
+                    println!("(before scale) w,h: {},{}", image.width(), image.height());
                     image.scale(256, 256, true, true);
+                    println!("(after scale) w,h: {},{}", image.width(), image.height());
+
                     fr.set_image(Some(image));
                     fr.set_label(&path.to_string_lossy());
                     fr.changed();
