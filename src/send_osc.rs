@@ -345,7 +345,7 @@ pub fn send_osc(
             current_value: &mut Option<u8>,
             count: &mut u8,
             value: u8,
-        ) -> bool {
+        ) {
             if let Some(curval) = current_value.as_mut() {
                 if *count > 1u8 {
                     result.push(*curval);
@@ -362,9 +362,6 @@ pub fn send_osc(
                 } else {
                     panic!("current_value is Some(x) but count == 0");
                 }
-                true
-            } else {
-                false
             }
         }
 
@@ -373,13 +370,10 @@ pub fn send_osc(
             // BYTES_PER_SEND chunk and then simply put two bytes as is, because
             // we cannot fit an escaped RLE sequence thingamajig here
             if (result.len() % BYTES_PER_SEND) >= (BYTES_PER_SEND - 2) {
-                let a = maybe_push(&mut result, &mut current_value, &mut count, value);
-                println!("maybe_push: {a}");
-                if !a {
-                    result.push(value);
-                    current_value = None;
-                    count = 0;
-                }
+                assert!(count == 1u8);
+                result.push(current_value.expect("current_value should always be Some(x) here"));
+                current_value = Some(value);
+                count = 1;
             } else if current_value == None {
                 current_value = Some(value);
                 count = 1;
