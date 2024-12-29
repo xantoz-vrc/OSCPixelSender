@@ -1,5 +1,6 @@
 use crate::AppMessage;
 use crate::utility::error_alert;
+use crate::static_assert;
 
 use fltk::prelude::*;
 use std::thread;
@@ -438,6 +439,7 @@ pub fn send_osc(
 
         let send_cmd = |cmd: &[u8]| -> Result<(), Box<dyn Error>> {
             for n in 0..BYTES_PER_SEND {
+                static_assert!(BYTES_PER_SEND <= 255);
                 send_int(vStr(n as u8), // BYTES_PER_SEND never larger than u8
                          cmd.get(n).copied().unwrap_or_default().into()
                 )?;
