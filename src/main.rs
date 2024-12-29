@@ -1,4 +1,4 @@
-use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog};
+use fltk::{app, frame::Frame, enums::CallbackTrigger, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
 use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
@@ -206,6 +206,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut scaling_toggle = CheckButton::default().with_label("Enable scaling").with_id("scaling_toggle");
     scaling_toggle.set_checked(true);
+    const SCALE_DEFAULT: &'static str = "128";
+    let mut scale_input = IntInput::default().with_size(0, 40).with_label("Scale (NxN)").with_id("scale_input");
+    // scale_input.set_trigger(CallbackTrigger::Changed);
+    scale_input.set_trigger(CallbackTrigger::EnterKey);
+    scale_input.set_value(SCALE_DEFAULT);
+    scale_input.set_maximum_size(1024);
+
+    // TODO: Is this even the right widget for this? Feels wierd to have to update the label.
+    let mut multiplier_menubutton = menu::MenuButton::default()
+        .with_label("Output scale multiplier")
+        .with_id("multiplier_menubutton");
+    multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x");
+    multiplier_menubutton.set_value(4);
 
     row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
@@ -217,6 +230,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
     col.fixed(&scaling_toggle, 20);
+    col.fixed(&scale_input, 30);
+    col.fixed(&multiplier_menubutton, 30);
 
     static SEND: OnceLock<mpsc::Sender<AppMessage>> = OnceLock::new();
     let chan: (mpsc::Sender<AppMessage>, mpsc::Receiver<AppMessage>) = mpsc::channel::<AppMessage>();
@@ -276,6 +291,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let maxcolors_slider: HorValueSlider = app::widget_from_id("maxcolors_slider").ok_or("widget_from_id fail")?;
                     let dithering_slider: HorValueSlider = app::widget_from_id("dithering_slider").ok_or("widget_from_id fail")?;
                     let scaling_toggle: CheckButton = app::widget_from_id("scaling_toggle").ok_or("widget_from_id fail")?;
+                    let scale_input: IntInput = app::widget_from_id("scale_input").ok_or("widget_from_id fail")?;
+                    let multiplier_menubutton: menu::MenuButton = app::widget_from_id("multiplier_menubutton").ok_or("widget_from_id fail")?;
 
                     // Clone the path, we do not want to keep holding the
                     // lock. It can lead to deadlock with clearimage otherwise
@@ -304,7 +321,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                             .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
 
                         if scaling_toggle.is_checked() {
-                            (bytes, width, height) = scale_image(&bytes, width, height, 128, 128)
+                            let value = scale_input.value();
+                            let scale: usize = value.parse()
+                                .map_err(|err| format!("Couldn't parse scale {value:?}: {err:?}"))?;
+                            (bytes, width, height) = scale_image(&bytes, width, height, scale, scale)
                                 .map_err(|err| format!("scale_image failed: {err:?}"))?;
                         }
 
@@ -322,7 +342,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                         ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
 
                         if scaling_toggle.is_checked() {
-                            rgbimage.scale(512, 512, true, true); // Display pixelly image larger
+                            let multiplier: usize =
+                                match || -> Result<_, String> {
+                                    let choice: String = multiplier_menubutton.choice()
+                                        .ok_or("No choice selected in multiplier menubutton")?;
+                                    let choice = choice.strip_suffix("x")
+                                        .ok_or_else(|| format!("No x suffix in multiplier menubutton choice: {choice:?}"))?;
+                                    let multiplier = choice.parse()
+                                        .map_err(|err| format!("Couldn't parse multiplier {choice:?}: {err:?}"))?;
+                                    Ok(multiplier)
+                                }() {
+                                    Ok(res) => res,
+                                    Err(msg) => {
+                                        eprintln!("{}", msg);
+                                        1
+                                    },
+                                };
+                            rgbimage.scale((width*multiplier) as i32, (height*multiplier) as i32, true, true); // Display pixelly image larger
                         }
                         frame.set_image(Some(rgbimage));
                     } else {
@@ -393,6 +429,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     maxcolors_slider.set_callback(|_| loadimage());
     dithering_slider.set_callback(|_| loadimage());
     scaling_toggle.set_callback(|_| loadimage());
+    scale_input.set_callback(|i| {
+        let value = i.value();
+        println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
+        if value.len() > 0 {
+            loadimage();
+        } else {
+            i.set_value(SCALE_DEFAULT);
+        }
+    });
+    multiplier_menubutton.set_callback(|m| {
+        println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
+        m.set_label(&m.choice().unwrap_or("NOT SET".to_string()));
+        loadimage();
+    });
 
     col.end();
     row.end();
