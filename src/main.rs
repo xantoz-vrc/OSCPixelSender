@@ -1,4 +1,4 @@
-use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, dialog};
+use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog};
 use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
@@ -163,11 +163,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut reorder_palette_toggle = CheckButton::default().with_label("Sort palette");
     reorder_palette_toggle.set_checked(true);
 
+    let mut maxcolors_slider = HorValueSlider::default().with_label("Max Colors");
+    maxcolors_slider.set_range(2.0, 256.0);
+    maxcolors_slider.set_step(1.0, 1);
+    maxcolors_slider.set_value(16.0);
+
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
     col.fixed(&grayscale_toggle, 30);
     col.fixed(&grayscale_output_toggle, 30);
+    col.fixed(&reorder_palette_toggle, 30);
+    col.fixed(&maxcolors_slider, 30);
 
     let imagepath_arc : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
 
@@ -190,6 +197,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let gr_toggle = grayscale_toggle.clone();
         let gr_output_toggle = grayscale_output_toggle.clone();
         let reorder_palette_toggle = reorder_palette_toggle.clone();
+        let cslider = maxcolors_slider.clone();
         let imagepath = Arc::clone(&imagepath_arc);
         let clearimage = Arc::clone(&clearimage_arc);
         move || {
@@ -230,7 +238,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
 
-            let qresult = quantize_image(&bytes, width, height, 16, gr_output_toggle.is_checked(), reorder_palette_toggle.is_checked());
+            let qresult = quantize_image(&bytes, width, height, cslider.value() as i32, gr_output_toggle.is_checked(), reorder_palette_toggle.is_checked());
             let Ok(rgbimage) = qresult else {
                 let msg = format!("Quantization failed: {qresult:?}");
                 eprintln!("{}", msg);
@@ -281,6 +289,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     grayscale_toggle.set_callback(loadimage_callback.clone());
     grayscale_output_toggle.set_callback(loadimage_callback.clone());
     reorder_palette_toggle.set_callback(loadimage_callback.clone());
+
+    maxcolors_slider.set_callback({
+        let loadimage = Arc::clone(&loadimage_arc);
+        move |_| {
+            loadimage.lock().unwrap()();
+        }
+    });
 
     col.end();
     row.end();
