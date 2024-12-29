@@ -4,7 +4,7 @@ use std::error::Error;
 
 pub struct SendError<T> {
     pub data: T,
-    pub message: &'static str,
+    pub message: String,
 }
 
 impl<T> std::fmt::Debug for SendError<T> {
@@ -23,7 +23,7 @@ impl<T> Error for SendError<T> {}
 
 #[derive(Debug)]
 pub struct RecvError {
-    pub message: &'static str,
+    pub message: String,
 }
 
 impl std::fmt::Display for RecvError {
@@ -55,7 +55,10 @@ impl<T> MessageQueueSender<T> {
     pub fn send(&self, val: T) -> Result<(), SendError<T>> {
         let lockres = self.queue.0.lock();
         let Ok(mut q) = lockres else {
-            return Err(SendError::<T> { data: val, message: "Error locking mutex", });
+            return Err(SendError::<T> {
+                data: val,
+                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
+            });
         };
 
         q.push_back(val);
@@ -64,18 +67,21 @@ impl<T> MessageQueueSender<T> {
         Ok(())
     }
 
-    pub fn send_or_replace(&self, new_val: T) -> Result<(), SendError<T>> {
+    pub fn send_or_replace(&self, val: T) -> Result<(), SendError<T>> {
         let lockres = self.queue.0.lock();
         let Ok(mut q) = lockres else {
-            return Err(SendError::<T> { data: new_val, message: "Error locking mutex", });
+            return Err(SendError::<T> {
+                data: val,
+                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
+            });
         };
 
         match q.back_mut() {
             Some(x) => {
-                *x = new_val;
+                *x = val;
             },
             None => {
-                q.push_back(new_val);
+                q.push_back(val);
                 self.queue.1.notify_one();
             },
         }
@@ -83,20 +89,23 @@ impl<T> MessageQueueSender<T> {
         Ok(())
     }
 
-    pub fn send_or_replace_if<F: FnOnce(&T) -> bool>(&self, pred: F, new_val: T) -> Result<(), SendError<T>> {
+    pub fn send_or_replace_if<F: FnOnce(&T) -> bool>(&self, pred: F, val: T) -> Result<(), SendError<T>> {
         let lockres = self.queue.0.lock();
         let Ok(mut q) = lockres else {
-            return Err(SendError::<T> { data: new_val, message: "Error locking mutex", });
+            return Err(SendError::<T> {
+                data: val,
+                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
+            });
         };
 
         match q.back_mut() {
             Some(x) => {
                 if pred(x) {
-                    *x = new_val;
+                    *x = val;
                 }
             },
             None => {
-                q.push_back(new_val);
+                q.push_back(val);
                 self.queue.1.notify_one();
             },
         }
@@ -107,7 +116,10 @@ impl<T> MessageQueueSender<T> {
     pub fn is_empty(&self) -> Result<bool, SendError<()>> {
         let lockres = self.queue.0.lock();
         let Ok(q) = lockres else {
-            return Err(SendError::<_> { data: (), message: "Error locking mutex", });
+            return Err(SendError::<()> {
+                data: (),
+                message: format!("Error locking mutex: {}", unsafe { lockres.unwrap_err_unchecked() }),
+            });
         };
 
         Ok(q.is_empty())
@@ -119,9 +131,9 @@ impl<T> MessageQueueReceiver<T> {
         let (lock, cvar) = &*self.queue;
         let guard = cvar.wait_while(
             lock.lock()
-                .map_err(|_err| RecvError{ message: "Error locking mutex" })?,
+                .map_err(|err| RecvError{ message: format!("Error locking mutex: {err}") })?,
             |vd| { vd.is_empty() },
-        ).map_err(|_err| RecvError{ message: "Error waiting on Condvar" })?;
+        ).map_err(|err| RecvError{ message: format!("Error waiting on Condvar: {err}") })?;
         Ok(guard)
     }
 
