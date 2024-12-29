@@ -94,6 +94,7 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
         .collect();
 
     // Trying out fancy rayon parallel iterators
+    // TODO: use a HashMap? or just an array that gets the reverse mapping
     let new_indexes : Vec<u8> = indexes.par_iter().map(
         |ic| permutation.iter().position(|&r| r == *ic as usize).unwrap_or_default() as u8
     ).collect();
