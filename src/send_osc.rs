@@ -17,7 +17,7 @@ use std::net::{SocketAddrV4, UdpSocket};
 use std::time::Duration;
 
 // TODO: To cut down on repetition in these enums: Either use something like strum. Or make your own macro maybe?
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Color {
     #[default]
     Grayscale,
@@ -42,7 +42,7 @@ impl ToString for Color {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PixFmt {
     Bpp1(Color),
     Bpp2(Color),
