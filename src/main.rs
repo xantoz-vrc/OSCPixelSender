@@ -177,26 +177,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     let imagepath_arc : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
 
     let clearimage_arc = Arc::new(Mutex::new({
-        let mut fr = frame.clone();
-        let mut wn = wind.clone();
+        let mut frame = frame.clone();
+        let mut wind = wind.clone();
         let imagepath = Arc::clone(&imagepath_arc);
         move || {
             *(imagepath.write().unwrap()) = None;
-            fr.set_image(None::<SharedImage>);
-            fr.set_label("Clear");
-            fr.changed();
-            wn.set_label("Clear");
+            frame.set_image(None::<SharedImage>);
+            frame.set_label("Clear");
+            frame.changed();
+            wind.set_label("Clear");
         }
     }));
 
     // let loadimage_arc : Arc<Mutex<dyn FnMut()>> = Arc::new(Mutex::new({
     let loadimage_arc = Arc::new(Mutex::new({
-        let fr = frame.clone();
-        let mut wn = wind.clone();
-        let gr_toggle = grayscale_toggle.clone();
-        let gr_output_toggle = grayscale_output_toggle.clone();
+        let frame = frame.clone();
+        let mut wind = wind.clone();
+        let grayscale_toggle = grayscale_toggle.clone();
+        let grayscale_output_toggle = grayscale_output_toggle.clone();
         let reorder_palette_toggle = reorder_palette_toggle.clone();
-        let cslider = maxcolors_slider.clone();
+        let maxcolors_slider = maxcolors_slider.clone();
         let imagepath = Arc::clone(&imagepath_arc);
         let clearimage = Arc::clone(&clearimage_arc);
 
@@ -204,11 +204,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("loadimage called");
 
             thread::spawn({
-                let mut fr = fr.clone();
-                let gr_toggle = gr_toggle.clone();
-                let gr_output_toggle = gr_output_toggle.clone();
+                let mut frame = frame.clone();
+                let grayscale_toggle = grayscale_toggle.clone();
+                let grayscale_output_toggle = grayscale_output_toggle.clone();
                 let reorder_palette_toggle = reorder_palette_toggle.clone();
-                let cslider = cslider.clone();
+                let maxcolors_slider = maxcolors_slider.clone();
                 let imagepath = Arc::clone(&imagepath);
                 let clearimage = Arc::clone(&clearimage);
                 move || {
@@ -239,7 +239,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     //image.scale(256, 256, true, true);
                     println!("(after scale) w,h: {},{}", image.width(), image.height());
 
-                    let bresult = sharedimage_to_bytes(&image, gr_toggle.is_checked());
+                    let bresult = sharedimage_to_bytes(&image, grayscale_toggle.is_checked());
                     let Ok((bytes, width, height)) = bresult else {
                         let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                         eprintln!("{}", msg);
@@ -247,7 +247,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         return;
                     };
 
-                    let qresult = quantize_image(&bytes, width, height, cslider.value() as i32, gr_output_toggle.is_checked(), reorder_palette_toggle.is_checked());
+                    let qresult = quantize_image(
+                        &bytes, width, height,
+
+                        maxcolors_slider.value() as i32,
+                        grayscale_output_toggle.is_checked(),
+                        reorder_palette_toggle.is_checked()
+                    );
                     let Ok(rgbimage) = qresult else {
                         let msg = format!("Quantization failed: {qresult:?}");
                         eprintln!("{}", msg);
@@ -255,13 +261,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         return;
                     };
 
-                    fr.set_image(Some(rgbimage));
-                    fr.set_label(&path.to_string_lossy());
-                    fr.changed();
+                    frame.set_image(Some(rgbimage));
+                    frame.set_label(&path.to_string_lossy());
+                    frame.changed();
                 }
             });
 
-            wn.set_label(&imagepath.read().unwrap().as_deref().unwrap().to_string_lossy());
+            wind.set_label(&imagepath.read().unwrap().as_deref().unwrap().to_string_lossy());
         }
     }));
 
@@ -283,7 +289,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     clearbtn.set_callback({
         let clearimage = Arc::clone(&clearimage_arc);
-
         move |_| {
             println!("Clear button pressed");
             clearimage.lock().unwrap()();
