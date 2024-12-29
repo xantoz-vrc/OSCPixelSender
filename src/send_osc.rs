@@ -357,11 +357,6 @@ pub fn send_osc(
 
         let result = rle_encode(&indexes[..]);
 
-        // // DEBUG OUTPUT
-        // println!("RLE compressed data:");
-        // for chunk in result.chunks(16) {
-        //     println!("  {chunk:?}");
-        // }
         let rle_compression_string =
             format!("RLE Compression ratio: {:.2}% (original length: {}, compressed length: {})",
                      ((result.len() as f64) / (indexes.len() as f64))*100.0, indexes.len(), result.len());
