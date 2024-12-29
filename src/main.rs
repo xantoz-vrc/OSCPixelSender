@@ -344,14 +344,21 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 },
                 BgMessage::SaveImage(path) => {
                     match || -> Result<(), String> {
+                        let path = path.with_extension("png");
+
                         let img = processed_image.as_ref()
                             .ok_or("No indexes or palette data")?;
 
                         let w = img.width.try_into().map_err(|err| format!("Trying to save zero width image: {err}"))?;
                         let h = img.height.try_into().map_err(|err| format!("Trying to save zero height image: {err}"))?;
 
-                        save_png::save_png(&path, w, h, &img.indexes, &img.palette)
-                            .map_err(|err| format!("Couldn't save image to {path:?}: {err}"))?;
+                        save_png::save_png(
+                            &path, w, h, &img.indexes, &img.palette,
+                            match img.grayscale_output {
+                                true  => save_png::ColorType::Grayscale,
+                                false => save_png::ColorType::Indexed,
+                            },
+                        ).map_err(|err| format!("Couldn't save image to {path:?}: {err}"))?;
 
                         alert(&appmsg, format!("Saved image as {path:?}"));
                         Ok(())
