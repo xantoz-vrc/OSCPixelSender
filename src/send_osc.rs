@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 // TODO: To cut down on repetition: Either use something like strum. Or make your own macro maybe?
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum Color {
     #[default]
     Grayscale,
@@ -35,7 +35,7 @@ impl ToString for Color {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum PixFmt {
     Bpp1(Color),
     Bpp2(Color),
@@ -88,18 +88,26 @@ impl PixFmt {
     }
 }
 
-#[allow(dead_code)]
+/*
 #[derive(Debug, Clone)]
 pub struct SendOSCOpts {
     linesync: bool,
 }
+*/
 
 pub fn send_osc(
     appmsg: &mpsc::Sender<AppMessage>,
     indexes: &Vec::<u8>,
     palette: &Vec::<quantizr::Color>,
+    width: u32,
+    height: u32,
+    pixfmt: PixFmt,
     msgs_per_second: f64
 ) -> Result<(), Box<dyn Error>> {
+    if indexes.len() != (width as usize) * (height as usize) {
+        return Err("width and height not matching length of indexes array".into());
+    }
+
     extern crate rosc;
 
     use rosc::encoder;
@@ -166,8 +174,53 @@ pub fn send_osc(
     let (win, mut progressbar) = rx.recv()?;
 
     let appmsg = appmsg.clone();
-    let indexes = indexes.clone();
+    // let indexes: Vec<u8> = indexes.iter().copied().rev().collect();
+    // let indexes = indexes.clone();
     let palette = palette.clone();
+
+    // TODO: de-duplicate code with save_png
+    // We need to do the conversion per line, because it might happen
+    // that the width doesn't divide evenly when we are using 4bpp,
+    // 2bpp or 1bpp modes. In that case each line must be padded out
+    // some pixels.
+    let indexes: Vec<u8> = match pixfmt {
+        PixFmt::Bpp1(_) =>
+            indexes
+            .chunks_exact(width.try_into()?)
+            .flat_map(|line|
+                      line.chunks(8)
+                      .map(|p|
+                           p.get(0).map_or(0, |v| (v & 0b1) << 7) |
+                           p.get(1).map_or(0, |v| (v & 0b1) << 6) |
+                           p.get(2).map_or(0, |v| (v & 0b1) << 5) |
+                           p.get(3).map_or(0, |v| (v & 0b1) << 4) |
+                           p.get(4).map_or(0, |v| (v & 0b1) << 3) |
+                           p.get(5).map_or(0, |v| (v & 0b1) << 2) |
+                           p.get(6).map_or(0, |v| (v & 0b1) << 1) |
+                           p.get(7).map_or(0, |v| (v & 0b1) << 0))
+            ).collect(),
+        PixFmt::Bpp2(_) =>
+            indexes
+            .chunks_exact(width.try_into()?)
+            .flat_map(|line|
+                      line.chunks(4)
+                      .map(|p|
+                           p.get(0).map_or(0, |v| (v & 0b11) << 6) |
+                           p.get(1).map_or(0, |v| (v & 0b11) << 4) |
+                           p.get(2).map_or(0, |v| (v & 0b11) << 2) |
+                           p.get(3).map_or(0, |v| (v & 0b11) << 0))
+            ).collect(),
+        PixFmt::Bpp4(_) =>
+            indexes
+            .chunks_exact(width.try_into()?)
+            .flat_map(|line|
+                      line.chunks(2)
+                      .map(|p|
+                           p.get(0).map_or(0, |v| (v & 0b1111) << 4) |
+                           p.get(1).map_or(0, |v| (v & 0b1111) << 0))
+            ).collect(),
+        PixFmt::Bpp8(_) => indexes.clone(),
+    };
 
     thread::spawn(move || -> () {
 
@@ -176,6 +229,8 @@ pub fn send_osc(
         match || -> Result<(), Box<dyn Error>> {
             let duration = Duration::from_secs_f64(sleep_time);
 
+            // Reset CLK
+
             let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                 addr: format!("{OSC_PREFIX}/CLK"),
                 args: vec![OscType::Bool(true)],
@@ -192,21 +247,44 @@ pub fn send_osc(
 
             thread::sleep(duration);
 
+            // Reset pixel
+
+            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/V0"),
+                args: vec![OscType::Int(0)],
+            }))?;
+            sock.send_to(&msg_buf, to_addr)?;
+
             let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                 addr: format!("{OSC_PREFIX}/Reset"),
                 args: vec![OscType::Bool(true)],
             }))?;
             sock.send_to(&msg_buf, to_addr)?;
 
-            thread::sleep(duration);
-
             let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/Reset"),
-                args: vec![OscType::Bool(false)],
+                addr: format!("{OSC_PREFIX}/CLK"),
+                args: vec![OscType::Bool(true)],
             }))?;
             sock.send_to(&msg_buf, to_addr)?;
 
             thread::sleep(duration);
+
+            // Set BPP
+            println!("Set BPP");
+            let bpp_val = match pixfmt {
+                PixFmt::Bpp1(_) => 192,
+                PixFmt::Bpp2(_) => 128,
+                PixFmt::Bpp4(_) => 64,
+                PixFmt::Bpp8(_) => 0,
+            };
+            let cmd: &[u8] = &[0b10000000, 2, 0, bpp_val, 0, 0, 0];
+            for (n, val) in cmd.iter().enumerate() {
+                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: format!("{OSC_PREFIX}/V{:X}", n),
+                    args: vec![OscType::Int(*val as i32)],
+                }))?;
+                sock.send_to(&msg_buf, to_addr)?;
+            }
 
             let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                 addr: format!("{OSC_PREFIX}/CLK"),
@@ -216,6 +294,24 @@ pub fn send_osc(
 
             thread::sleep(duration);
 
+            // Reset the reset bit
+            println!("Reset the reset bit");
+            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/Reset"),
+                args: vec![OscType::Bool(false)],
+            }))?;
+            sock.send_to(&msg_buf, to_addr)?;
+
+            thread::sleep(duration);
+/*
+            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/CLK"),
+                args: vec![OscType::Bool(false)],
+            }))?;
+            sock.send_to(&msg_buf, to_addr)?;
+
+            thread::sleep(duration);
+*/
             let now = std::time::Instant::now();
 
             let mut clk: bool = true;
@@ -229,12 +325,11 @@ pub fn send_osc(
                     break;
                 }
 
-                dbg!(&index16);
+                //dbg!(&index16);
+                println!("{index16:?}");
 
-                let mut n: u32 = 0;
-                for index in index16 {
+                for (n, index) in index16.iter().enumerate() {
                     let valuename = format!("V{:X}", n);
-                    n += 1;
                     let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                         addr: format!("{OSC_PREFIX}/{valuename}"),
                         args: vec![OscType::Int(*index as i32)],
