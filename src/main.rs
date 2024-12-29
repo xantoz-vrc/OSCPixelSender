@@ -3,7 +3,6 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::iter::zip;
 use rayon::prelude::*;
-use std::fmt;
 
 fn get_file() -> Option<PathBuf> {
     let mut nfc = dialog::NativeFileChooser::new(dialog::FileDialogType::BrowseFile);
@@ -46,15 +45,6 @@ fn sharedimage_to_bytes(image : &SharedImage, grayscale : bool) -> Result<(Vec<u
     Ok((bytes, width, height))
 }
 
-/*
-impl fmt::Debug for quantizr::Color {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Custom output format: Point(x, y)
-        write!(f, "{:03}, {:03}, {:03}, {:03}", self.r, self.g, self.b, self.a)
-    }
-}
-*/
-
 // Ugly hack to workaround quantizr not being really made for
 // grayscale by reordering the pallette, which means that the indexes
 // should be able to be used without the palette as a sort-of
@@ -62,13 +52,13 @@ impl fmt::Debug for quantizr::Color {
 fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palette) -> (Vec<u8>, Vec<quantizr::Color>)
 {
     let mut permutation : Vec<usize> = (0..(palette.count as usize)).collect();
-    dbg!(&permutation);
+    // dbg!(&permutation);
     permutation.sort_by_key(|&i| {
         let c = palette.entries[i];
         let (r,g,b) = (c.r as i32, c.g as i32, c.b as i32);
         r + g + b
     });
-    dbg!(&permutation);
+    // dbg!(&permutation);
 
     /*
     let new_palette : Vec<quantizr::Color> =
@@ -85,8 +75,8 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
     // dbg!(palette.entries[0..(palette.count as usize)]);
     // dbg!(new_palette);
 
-    dbg!(palette.entries[0..(palette.count as usize)].iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
-    dbg!(new_palette.iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
+    // dbg!(palette.entries[0..(palette.count as usize)].iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
+    // dbg!(new_palette.iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
 
     // for (new_idx, old_idx) in permutation.iter().enumerate() {
     //     palette.entries.swap(new_idx, *old_idx);
