@@ -334,12 +334,6 @@ mod send_osc {
                 let duration = Duration::from_secs_f64(sleep_time);
 
                 let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                    addr: format!("{OSC_PREFIX}/CLK"),
-                    args: vec![OscType::Bool(false)],
-                }))?;
-                sock.send_to(&msg_buf, to_addr)?;
-
-                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                     addr: format!("{OSC_PREFIX}/Reset"),
                     args: vec![OscType::Bool(true)],
                 }))?;
@@ -348,13 +342,15 @@ mod send_osc {
                 thread::sleep(duration);
 
                 let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                    addr: format!("{OSC_PREFIX}/CLK"),
+                    addr: format!("{OSC_PREFIX}/Reset"),
                     args: vec![OscType::Bool(false)],
                 }))?;
                 sock.send_to(&msg_buf, to_addr)?;
 
+                thread::sleep(duration);
+
                 let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                    addr: format!("{OSC_PREFIX}/Reset"),
+                    addr: format!("{OSC_PREFIX}/CLK"),
                     args: vec![OscType::Bool(false)],
                 }))?;
                 sock.send_to(&msg_buf, to_addr)?;
@@ -363,7 +359,7 @@ mod send_osc {
 
                 let now = std::time::Instant::now();
 
-                let mut clk: bool = false;
+                let mut clk: bool = true;
                 let chunks = indexes.chunks_exact(16);
                 let mut count: usize = 0;
                 let countmax: usize = chunks.len();
