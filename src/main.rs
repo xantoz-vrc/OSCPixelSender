@@ -624,7 +624,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     scale_input.set_value(SCALE_DEFAULT);
     scale_input.set_maximum_size(1024);
 
-    // TODO: Is this even the right widget for this? Feels wierd to have to update the label.
     let mut multiplier_choice = menu::Choice::default()
         .with_label("Display scale multiplier:")
         .with_id("multiplier_choice");
