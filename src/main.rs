@@ -1,6 +1,7 @@
 pub mod mq;
 mod send_osc;
 mod save_png;
+#[macro_use]
 mod utility;
 
 use utility::{print_err, alert, error_alert};

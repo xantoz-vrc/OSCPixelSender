@@ -21,3 +21,11 @@ pub fn error_alert(appmsg: &mpsc::Sender<AppMessage>, message: String) -> () {
     print_err(appmsg.send(AppMessage::Alert(message)));
     fltk::app::awake();
 }
+
+
+#[macro_export]
+macro_rules! static_assert {
+    ($($tt:tt)*) => {
+        const _: () = assert!($($tt)*);
+    }
+}
