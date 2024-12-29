@@ -253,8 +253,6 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 },
                 BgMessage::LoadImage(path) => {
                     match || -> Result<(), String> {
-                        let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
-
                         // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
                         //       We should only convert to FLTK image format at the very end
                         let image = SharedImage::load(&path)
@@ -264,9 +262,13 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         println!("Loaded image {path:?}");
 
                         let pathstr = path.to_string_lossy();
-                        frame.set_label(&pathstr);
-                        frame.changed();
-                        frame.redraw();
+                        {
+                            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                            frame.set_label(&pathstr);
+                            frame.changed();
+                            frame.redraw();
+                        }
+
                         fltk::app::awake();
                         appmsg.send(AppMessage::SetTitle(pathstr.to_string())).
                             map_err(|err| format!("Send error: {err}"))?;
@@ -326,9 +328,6 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     multiplier,
                 } => {
                     match || -> Result<(), String> {
-                        let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
-                        let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
-
                         let Some(ref image) = sharedimage else {
                             eprintln!("No image loaded");
                             return Ok(());
@@ -365,19 +364,28 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                                (height as i32) * (multiplier as i32),
                                                true, true); // Display pixelly image larger
                             }
-                            frame.set_image(Some(rgbimage));
 
-                            let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output)
-                                .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
-                            palette_frame.set_image_scaled(Some(palette_rgbimage));
-                            palette_frame.changed();
-                            palette_frame.redraw();
+                            {
+                                let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                                let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
+
+                                frame.set_image(Some(rgbimage));
+                                frame.changed();
+                                frame.redraw();
+
+                                let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output)
+                                    .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
+                                palette_frame.set_image_scaled(Some(palette_rgbimage));
+                                palette_frame.changed();
+                                palette_frame.redraw();
+                            }
                         } else {
+                            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                             frame.set_image(Some(image.clone()));
+                            frame.changed();
+                            frame.redraw();
                         }
 
-                        frame.changed();
-                        frame.redraw();
                         fltk::app::awake();
 
                         println!("Finished updating image");
