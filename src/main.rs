@@ -1,6 +1,5 @@
 use fltk::{app, frame::Frame, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog};
 use std::error::Error;
-use std::path::Path;
 use std::path::PathBuf;
 use std::iter::zip;
 use rayon::prelude::*;
