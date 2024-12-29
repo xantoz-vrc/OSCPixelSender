@@ -179,7 +179,8 @@ fn create_progressbar_window(
     })?;
     fltk::app::awake();
 
-    let (win, progressbar) = rx.recv()?;
+    let (mut win, progressbar) = rx.recv()?;
+    win.set_on_top();
 
     Ok((cancel_flag, win, progressbar))
 }
