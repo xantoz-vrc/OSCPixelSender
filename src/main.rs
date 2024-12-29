@@ -28,7 +28,7 @@ macro_rules! function {
             std::any::type_name::<T>()
         }
         let name = type_name_of(f);
-        name.strip_suffix("::f").unwrap()
+        name.strip_suffix("::f").unwrap_or(name)
     }}
 }
 
