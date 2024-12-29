@@ -185,6 +185,12 @@ pub fn send_osc(
 
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
+    // Defines for communication with the shader
+    const SETPIXEL_COMMAND: u8 = 0x80;
+    const BITDEPTH_PIXEL: u8 = 2;
+    const PALETTECTRL_PIXEL: u8 = 3;
+    const PALETTEWRIDX_PIXEL: u8 = 4;
+
     // TODO: de-duplicate code with save_png
     // We need to do the conversion per line, because it might happen
     // that the width doesn't divide evenly when we are using 4bpp,
@@ -312,8 +318,8 @@ pub fn send_osc(
 
             // Set BPP
             progress_message("Set BPP".to_string(), 0.0);
-            send_cmd(&[0x80, // Set data pixel command (when Reset is active)
-                       2, 0, // BITDEPTH_PIXEL at 2,0 controls BPP (red channel)
+            send_cmd(&[SETPIXEL_COMMAND, // Set data pixel command (when Reset is active)
+                       BITDEPTH_PIXEL, 0, // BITDEPTH_PIXEL at 2,0 controls BPP (red channel)
                        match options.pixfmt {
                            PixFmt::Bpp1(_) => 192,
                            PixFmt::Bpp2(_) => 128,
@@ -329,8 +335,8 @@ pub fn send_osc(
                 Color::Indexed => {
                     progress_message("Set palette write mode".to_string(), 0.0);
                     send_cmd(&[
-                        0x80, // Set data pixel command
-                        3, 0, // PALETTECTRL_PIXEL
+                        SETPIXEL_COMMAND,
+                        PALETTECTRL_PIXEL, 0,
                         255,  // red channel: palette active
                         255,  // green channel: palette write mode active
                         0,    // blue channel: unused
@@ -341,8 +347,8 @@ pub fn send_osc(
 
                     progress_message("Reset palette write index".to_string(), 0.0);
                     send_cmd(&[
-                        0x80, // Set data pixel command
-                        4, 0, // PALETTEWRIDX_PIXEL
+                        SETPIXEL_COMMAND,
+                        PALETTEWRIDX_PIXEL, 0,
                         0,    // red channel: wridx 0
                         0,    // green channel: unused
                         0,    // blue channel: unused
@@ -370,8 +376,8 @@ pub fn send_osc(
                     progress_message("Disable palette write mode & Enable indexed colors".to_string(), 0.0);
                     send_bool("Reset", true)?;
                     send_cmd(&[
-                        0x80, // Set data pixel command
-                        3, 0, // PALETTECTRL_PIXEL
+                        SETPIXEL_COMMAND,
+                        PALETTECTRL_PIXEL, 0,
                         255,  // red channel: palette active
                         0,    // green channel: palette write mode inactive
                         0,    // blue channel: unused
@@ -383,8 +389,8 @@ pub fn send_osc(
                 Color::Grayscale => {
                     progress_message("Set to grayscale mode".to_string(), 0.0);
                     send_cmd(&[
-                        0x80, // Set data pixel command
-                        3, 0, // PALETTECTRL_PIXEL
+                        SETPIXEL_COMMAND,
+                        PALETTECTRL_PIXEL, 0,
                         0,    // red channel: palette inactive
                         0,    // green channel: palette write mode not active
                         0,    // blue channel: unused/reset palette
