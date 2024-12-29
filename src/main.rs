@@ -839,9 +839,9 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
             scaler_type: {
                 match || -> Result<ScalerType, String> {
                     let choice = scaler_type_choice.choice()
-                        .ok_or("No resize type selected")?;
+                        .ok_or("No scaler type selected")?;
                     let parsed = choice.parse()
-                        .map_err(|err| format!("Couldn't parse resize type {choice:?}: {err}"))?;
+                        .map_err(|err| format!("Couldn't parse scaler type {choice:?}: {err}"))?;
                     Ok(parsed)
                 }() {
                     Ok(res) => res,
