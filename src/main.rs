@@ -237,166 +237,163 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
     let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
         let mut sharedimage: Option<SharedImage> = None;
-        let mut run: bool = true;
 
-        while run {
-            let recvres = receiver.drain();
-            let Ok(messages) = recvres else {
+        loop {
+            let recvres = receiver.recv();
+            let Ok(msg) = recvres else {
                 let s = format!("Error receiving from mq::MessageQueueReceiver: {}", recvres.unwrap_err());
                 eprintln!("{}", s);
                 print_err(appmsg.send(AppMessage::Alert(s)));
                 continue;
             };
 
-            for msg in messages {
-                match msg {
-                    BgMessage::Quit => {
-                        run = false;
-                        break;
-                    },
-                    BgMessage::LoadImage(path) => {
-                        match || -> Result<(), String> {
-                            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+            match msg {
+                BgMessage::Quit => {
+                    break;
+                },
+                BgMessage::LoadImage(path) => {
+                    match || -> Result<(), String> {
+                        let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
 
-                            // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
-                            //       We should only convert to FLTK image format at the very end
-                            let image = SharedImage::load(&path)
-                                .map_err(|err| format!("Image load for image {path:?} failed: {err:}"))?;
+                        // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
+                        //       We should only convert to FLTK image format at the very end
+                        let image = SharedImage::load(&path)
+                            .map_err(|err| format!("Image load for image {path:?} failed: {err:}"))?;
 
-                            sharedimage = Some(image);
-                            println!("Loaded image {path:?}");
+                        sharedimage = Some(image);
+                        println!("Loaded image {path:?}");
 
-                            let pathstr = path.to_string_lossy();
-                            frame.set_label(&pathstr);
-                            frame.changed();
-                            frame.redraw();
-                            fltk::app::awake();
-                            appmsg.send(AppMessage::SetTitle(pathstr.to_string())).
-                                map_err(|err| format!("Send error: {err}"))?;
-
-                            println!("Finished LoadImage for {path:?}");
-                            Ok(())
-                        }() {
-                            Ok(()) => (),
-                            Err(errmsg) => {
-                                let msg = format!("LoadImage fail:\n{errmsg}");
-                                eprintln!("{}", msg);
-                                print_err(appmsg.send(AppMessage::Alert(msg)));
-                            }
-                        }
+                        let pathstr = path.to_string_lossy();
+                        frame.set_label(&pathstr);
+                        frame.changed();
+                        frame.redraw();
+                        fltk::app::awake();
+                        appmsg.send(AppMessage::SetTitle(pathstr.to_string())).
+                            map_err(|err| format!("Send error: {err}"))?;
 
                         send_updateimage(&appmsg, &sender);
-                    },
-                    BgMessage::ClearImage => {
-                        match || -> Result<(), String> {
-                            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
-                            let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
-                            sharedimage = None::<SharedImage>;
+                        println!("Finished LoadImage for {path:?}");
+                        Ok(())
+                    }() {
+                        Ok(()) => (),
+                        Err(errmsg) => {
+                            let msg = format!("LoadImage fail:\n{errmsg}");
+                            eprintln!("{}", msg);
+                            print_err(appmsg.send(AppMessage::Alert(msg)));
+                            print_err(sender.send(BgMessage::ClearImage));
+                        }
+                    }
+                },
+                BgMessage::ClearImage => {
+                    match || -> Result<(), String> {
+                        let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                        let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
-                            frame.set_image(None::<SharedImage>);
-                            frame.set_label("Clear");
-                            frame.changed();
+                        sharedimage = None::<SharedImage>;
 
-                            palette_frame.set_image(None::<RgbImage>);
+                        frame.set_image(None::<SharedImage>);
+                        frame.set_label("Clear");
+                        frame.changed();
+
+                        palette_frame.set_image(None::<RgbImage>);
+                        palette_frame.changed();
+
+                        fltk::app::redraw();
+
+                        appmsg.send(AppMessage::SetTitle("Clear".to_string()))
+                            .map_err(|err| format!("Send error: {err}"))?;
+
+                        Ok(())
+                    }() {
+                        Ok(()) => (),
+                        Err(errmsg) => {
+                            let msg = format!("ClearImage fail:\n{errmsg}");
+                            eprintln!("{}", msg);
+                            print_err(appmsg.send(AppMessage::Alert(msg)));
+                        }
+                    };
+                },
+                BgMessage::UpdateImage{
+                    no_quantize,
+                    grayscale,
+                    grayscale_output,
+                    reorder_palette,
+                    maxcolors,
+                    dithering,
+                    scaling,
+                    scale,
+                    multiplier,
+                } => {
+                    match || -> Result<(), String> {
+                        let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                        let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
+
+                        let Some(ref image) = sharedimage else {
+                            eprintln!("No image loaded");
+                            return Ok(());
+                        };
+
+                        if !no_quantize {
+                            let mut bytes: Vec<u8>;
+                            let mut width: usize;
+                            let mut height: usize;
+
+                            (bytes, width, height) = sharedimage_to_bytes(&image, grayscale)
+                                .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
+
+                            if scaling {
+                                (bytes, width, height) = scale_image(&bytes, width, height, scale, scale)
+                                    .map_err(|err| format!("scale_image failed: {err:?}"))?;
+                            }
+
+                            let (indexes, palette) = quantize_image(
+                                &bytes, width, height,
+                                maxcolors,
+                                dithering,
+                                reorder_palette,
+                            ).map_err(|err| format!("Quantization failed: {err:?}"))?;
+
+                            let mut rgbimage = quantized_image_to_rgbimage(
+                                &indexes, &palette,
+                                width, height,
+                                grayscale_output,
+                            ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
+
+                            if scaling {
+                                rgbimage.scale((width as i32) * (multiplier as i32),
+                                               (height as i32) * (multiplier as i32),
+                                               true, true); // Display pixelly image larger
+                            }
+                            frame.set_image(Some(rgbimage));
+
+                            let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output)
+                                .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
+                            palette_frame.set_image_scaled(Some(palette_rgbimage));
                             palette_frame.changed();
+                            palette_frame.redraw();
+                        } else {
+                            frame.set_image(Some(image.clone()));
+                        }
 
-                            fltk::app::redraw();
+                        frame.changed();
+                        frame.redraw();
+                        fltk::app::awake();
 
-                            appmsg.send(AppMessage::SetTitle("Clear".to_string()))
-                                .map_err(|err| format!("Send error: {err}"))?;
+                        println!("Finished updating image");
 
-                            Ok(())
-                        }() {
-                            Ok(()) => (),
-                            Err(errmsg) => {
-                                let msg = format!("ClearImage fail:\n{errmsg}");
-                                eprintln!("{}", msg);
-                                print_err(appmsg.send(AppMessage::Alert(msg)));
-                            }
-                        };
-                    },
-                    BgMessage::UpdateImage{
-                        no_quantize,
-                        grayscale,
-                        grayscale_output,
-                        reorder_palette,
-                        maxcolors,
-                        dithering,
-                        scaling,
-                        scale,
-                        multiplier,
-                    } => {
-                        match || -> Result<(), String> {
-                            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
-                            let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
-
-                            let Some(ref image) = sharedimage else {
-                                eprintln!("No image loaded");
-                                return Ok(());
-                            };
-
-                            if !no_quantize {
-                                let mut bytes: Vec<u8>;
-                                let mut width: usize;
-                                let mut height: usize;
-
-                                (bytes, width, height) = sharedimage_to_bytes(&image, grayscale)
-                                    .map_err(|err| format!("sharedimage_to_bytes failed: {err:?}"))?;
-
-                                if scaling {
-                                    (bytes, width, height) = scale_image(&bytes, width, height, scale, scale)
-                                        .map_err(|err| format!("scale_image failed: {err:?}"))?;
-                                }
-
-                                let (indexes, palette) = quantize_image(
-                                    &bytes, width, height,
-                                    maxcolors,
-                                    dithering,
-                                    reorder_palette,
-                                ).map_err(|err| format!("Quantization failed: {err:?}"))?;
-
-                                let mut rgbimage = quantized_image_to_rgbimage(
-                                    &indexes, &palette,
-                                    width, height,
-                                    grayscale_output,
-                                ).map_err(|err| format!("Conversion to rgbimage failed: {err:?}"))?;
-
-                                if scaling {
-                                    rgbimage.scale((width as i32) * (multiplier as i32),
-                                                   (height as i32) * (multiplier as i32),
-                                                   true, true); // Display pixelly image larger
-                                }
-                                frame.set_image(Some(rgbimage));
-
-                                let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output)
-                                    .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
-                                palette_frame.set_image_scaled(Some(palette_rgbimage));
-                                palette_frame.changed();
-                                palette_frame.redraw();
-                            } else {
-                                frame.set_image(Some(image.clone()));
-                            }
-
-                            frame.changed();
-                            frame.redraw();
-                            fltk::app::awake();
-
-                            println!("Finished updating image");
-
-                            Ok(())
-                        }() {
-                            Ok(()) => (),
-                            Err(errmsg) => {
-                                let msg = format!("UpdateImage fail:\n{errmsg}");
-                                eprintln!("{}", msg);
-                                print_err(appmsg.send(AppMessage::Alert(msg)));
-                                print_err(sender.send(BgMessage::ClearImage));
-                            },
-                        };
-                    },
-                };
-            }
+                        Ok(())
+                    }() {
+                        Ok(()) => (),
+                        Err(errmsg) => {
+                            let msg = format!("UpdateImage fail:\n{errmsg}");
+                            eprintln!("{}", msg);
+                            print_err(appmsg.send(AppMessage::Alert(msg)));
+                            print_err(sender.send(BgMessage::ClearImage));
+                        },
+                    };
+                },
+            };
         }
 
         println!("BG Process Finished");
