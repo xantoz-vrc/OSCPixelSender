@@ -87,7 +87,7 @@ pub fn save_png(
             &png_data
         },
         png::BitDepth::Eight => indexes,
-        png::BitDepth::Sixteen => return Err("Unsupported".into()),
+        png::BitDepth::Sixteen => return Err("Unsupported bitdepth".into()),
     };
 
     let mut encoder = png::Encoder::new(bufw, width.into(), height.into());
