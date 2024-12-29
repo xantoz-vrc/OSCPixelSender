@@ -10,7 +10,8 @@ use std::panic;
 use std::string::String;
 use image::{self, imageops};
 use std::sync::mpsc;
-// use std::sync::OnceLock;
+use std::default::Default;
+
 
 #[allow(unused_macros)]
 macro_rules! function {
@@ -242,18 +243,92 @@ fn print_err<T, E: Error>(result: Result<T, E>) -> () {
 mod send_osc {
     use super::*;
 
-    #[derive(Debug, Clone)]
+    use std::string::ToString;
+    use std::str::FromStr;
+
+    // TODO: To cut down on repetition: Either use something like strum. Or make your own macro maybe?
+
+    #[derive(Debug, Clone, Default)]
     pub enum Color {
+        #[default]
         Grayscale,
         Indexed,
+    }
+
+    impl FromStr for Color {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                "Grayscale" => Ok(Self::Grayscale),
+                "Indexed" => Ok(Self::Indexed),
+                _ => Err(format!("Couldn't parse as {}: {}", std::any::type_name::<Self>(), s)),
+            }
+        }
+    }
+
+    impl ToString for Color {
+        fn to_string(&self) -> String {
+            format!("{:?}", self)
+       }
     }
 
     #[derive(Debug, Clone)]
     pub enum PixFmt {
         Bpp1(Color),
+        Bpp2(Color),
         Bpp4(Color),
-        Bpp5(Color),
         Bpp8(Color),
+    }
+
+    impl ToString for PixFmt {
+        fn to_string(&self) -> String {
+            format!("{:?}", self)
+        }
+    }
+
+    impl FromStr for PixFmt {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                "Bpp1" => Ok(Self::Bpp1(Default::default())),
+                "Bpp2" => Ok(Self::Bpp2(Default::default())),
+                "Bpp4" => Ok(Self::Bpp4(Default::default())),
+                "Bpp8" => Ok(Self::Bpp8(Default::default())),
+                "Bpp1(Grayscale)" => Ok(Self::Bpp1(Color::Grayscale)),
+                "Bpp2(Grayscale)" => Ok(Self::Bpp2(Color::Grayscale)),
+                "Bpp4(Grayscale)" => Ok(Self::Bpp4(Color::Grayscale)),
+                "Bpp8(Grayscale)" => Ok(Self::Bpp8(Color::Grayscale)),
+                "Bpp1(Indexed)" => Ok(Self::Bpp1(Color::Indexed)),
+                "Bpp2(Indexed)" => Ok(Self::Bpp2(Color::Indexed)),
+                "Bpp4(Indexed)" => Ok(Self::Bpp4(Color::Indexed)),
+                "Bpp8(Indexed)" => Ok(Self::Bpp8(Color::Indexed)),
+                _ => Err(format!("Couldn't parse as {}: {}", std::any::type_name::<Self>(), s)),
+            }
+        }
+    }
+
+    impl PixFmt {
+        pub const VALUES: [PixFmt; 8] = [
+            PixFmt::Bpp1(Color::Grayscale),
+            PixFmt::Bpp2(Color::Grayscale),
+            PixFmt::Bpp4(Color::Grayscale),
+            PixFmt::Bpp8(Color::Grayscale),
+            PixFmt::Bpp1(Color::Indexed),
+            PixFmt::Bpp2(Color::Indexed),
+            PixFmt::Bpp4(Color::Indexed),
+            PixFmt::Bpp8(Color::Indexed),
+        ];
+
+        pub fn into_iter() -> core::array::IntoIter<PixFmt, 8> {
+            Self::VALUES.into_iter()
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct SendOSCOpts {
+        linesync: bool,
     }
 
     pub fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Vec::<quantizr::Color>, msgs_per_second: f64) -> Result<(), Box<dyn Error>> {
@@ -795,8 +870,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     osc_speed_slider.set_range(0.5, 20.0);
     osc_speed_slider.set_step(0.5, 1);
     osc_speed_slider.set_value(OSC_SPEED_DEFAULT);
-    let mut osc_pixfmt_menubutton = menu::MenuButton::default()
-        .with_label()
+    let mut osc_pixfmt_choice = menu::Choice::default()
+        .with_label("OSC Pixel format");
+    // let pixfmt_choices = send_osc::PixFmt::into_iter().fold("".to_string(), |acc, s| format!("{acc}|{}", s.to_string()));
+    // let pixfmt_choices = send_osc::PixFmt::into_iter().map(|p| p.to_string()).reduce(|acc, s| format!("{acc}|{s}")).unwrap();
+    // let pixfmt_choices = send_osc::PixFmt::into_iter().map(|p| p.to_string()).join("|");
+    let pixfmt_choices = send_osc::PixFmt::VALUES.map(|p| p.to_string()).join("|");
+    dbg!(&pixfmt_choices);
+    osc_pixfmt_choice.add_choice(&pixfmt_choices);
+    osc_pixfmt_choice.set_callback(|c| {
+        println!("osc_pixfmt_choice: {:?}", c.choice())
+    });
+    osc_pixfmt_choice.set_value(
+        osc_pixfmt_choice.find_index(
+            &send_osc::PixFmt::Bpp8(send_osc::Color::Grayscale).to_string()
+        )
+    );
 
     row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
@@ -814,6 +903,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&divider, 5);
     col.fixed(&send_osc_btn, 50);
     col.fixed(&osc_speed_slider, 30);
+    col.fixed(&osc_pixfmt_choice, 30);
 
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
     let (joinhandle, bg) = start_background_process(&appmsg);
@@ -893,18 +983,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         let bg = bg.clone();
         let appmsg = appmsg.clone();
         move |_| {
-            let speed = osc_speed_slider.value();
-            let result = bg.send(
-                BgMessage::SendOSC{
-                    speed: speed,
-                    pixfmt: send_osc::PixFmt::Bpp8(send_osc::Color::Grayscale),
+            match || -> Result<(), String> {
+                bg.send(
+                    BgMessage::SendOSC{
+                        speed: osc_speed_slider.value(),
+                        pixfmt: {
+                            osc_pixfmt_choice.choice()
+                                .ok_or("No PixFmt selected")?
+                                .parse()?
+                        },
+                    }
+                ).map_err(|err| format!("bg.send error: {err}"))?;
+                Ok(())
+            }() {
+                Ok(()) => (),
+                Err(err) => {
+                    let msg = format!("Send OSC button error: {err}");
+                    eprintln!("{}", msg);
+                    print_err(appmsg.send(AppMessage::Alert(msg)));
+                    fltk::app::awake();
                 }
-            );
-            if result.is_err() {
-                let msg = format!("Send OSC button error: {:?}", result);
-                eprintln!("{}", msg);
-                print_err(appmsg.send(AppMessage::Alert(msg)));
-                fltk::app::awake();
             }
         }
     });
