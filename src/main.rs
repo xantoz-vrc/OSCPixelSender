@@ -508,7 +508,12 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     match || -> Result<(), String> {
                         let img = processed_image.as_ref()
                             .ok_or("Indexes and palette not generated yet")?;
-                        send_osc::send_osc(&appmsg, &img.indexes, &img.palette, img.width, img.height, pixfmt, speed)
+                        let options = send_osc::SendOSCOpts{
+                            pixfmt: pixfmt,
+                            msgs_per_second: speed,
+                            ..Default::default()
+                        };
+                        send_osc::send_osc(&appmsg, &img.indexes, &img.palette, img.width, img.height, options)
                             .map_err(|err| format!("send_osc failed: {err}"))?;
                         Ok(())
                     }() {

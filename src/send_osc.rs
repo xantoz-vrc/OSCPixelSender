@@ -51,6 +51,12 @@ pub enum PixFmt {
     Bpp8(Color),
 }
 
+impl Default for PixFmt {
+    fn default() -> Self {
+        PixFmt::Bpp8(Color::Indexed)
+    }
+}
+
 impl ToString for PixFmt {
     fn to_string(&self) -> String {
         format!("{:?}", self)
@@ -95,13 +101,6 @@ impl PixFmt {
         Self::VALUES.into_iter()
     }
 }
-
-/*
-#[derive(Debug, Clone)]
-pub struct SendOSCOpts {
-    linesync: bool,
-}
-*/
 
 fn create_progressbar_window(
     appmsg: &mpsc::Sender<AppMessage>,
@@ -158,14 +157,21 @@ fn create_progressbar_window(
     Ok((cancel_flag, win, progressbar))
 }
 
+
+#[derive(Debug, Clone, Default)]
+pub struct SendOSCOpts {
+    pub pixfmt: PixFmt,
+    pub msgs_per_second: f64,
+    pub linesync: bool,
+}
+
 pub fn send_osc(
     appmsg: &mpsc::Sender<AppMessage>,
     indexes: &Vec::<u8>,
     palette: &Vec::<quantizr::Color>,
     width: u32,
     height: u32,
-    pixfmt: PixFmt,
-    msgs_per_second: f64,
+    options: SendOSCOpts,
 ) -> Result<(), Box<dyn Error>> {
     if indexes.len() != (width as usize) * (height as usize) {
         return Err("width and height not matching length of indexes array".into());
@@ -175,7 +181,7 @@ pub fn send_osc(
     let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
     let sock = UdpSocket::bind(host_addr)?;
 
-    let sleep_time = 1.0/msgs_per_second;
+    let sleep_time = 1.0/options.msgs_per_second;
 
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
@@ -184,7 +190,7 @@ pub fn send_osc(
     // that the width doesn't divide evenly when we are using 4bpp,
     // 2bpp or 1bpp modes. In that case each line must be padded out
     // some pixels.
-    let indexes: Vec<u8> = match pixfmt {
+    let indexes: Vec<u8> = match options.pixfmt {
         PixFmt::Bpp1(_) =>
             indexes
             .chunks_exact(width.try_into()?)
@@ -224,7 +230,7 @@ pub fn send_osc(
     };
 
     // TODO: Perhaps it would've made more sense with a regular old struct for pixfmt
-    let color = match pixfmt {
+    let color = match options.pixfmt {
         PixFmt::Bpp1(col) => col,
         PixFmt::Bpp2(col) => col,
         PixFmt::Bpp4(col) => col,
@@ -308,7 +314,7 @@ pub fn send_osc(
             progress_message("Set BPP".to_string(), 0.0);
             send_cmd(&[0x80, // Set data pixel command (when Reset is active)
                        2, 0, // BITDEPTH_PIXEL at 2,0 controls BPP (red channel)
-                       match pixfmt {
+                       match options.pixfmt {
                            PixFmt::Bpp1(_) => 192,
                            PixFmt::Bpp2(_) => 128,
                            PixFmt::Bpp4(_) => 64,
