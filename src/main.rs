@@ -104,7 +104,7 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
 // TODO: Split this up into two functions, one which returns the
 // indexes+palette and another which turns indexes + palette into an
 // RGBImage for display
-fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32, grayscale_output : bool) -> Result<RgbImage, Box<dyn Error>> {
+fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32, grayscale_output : bool, reorder_palette : bool) -> Result<RgbImage, Box<dyn Error>> {
 
     let qimage = quantizr::Image::new(bytes, width, height)?;
     let mut qopts = quantizr::Options::default();
@@ -118,8 +118,14 @@ fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : 
 
     let palette = result.get_palette();
 
-    let (new_indexes, new_palette) = reorder_palette_by_brightness(&indexes, palette);
-    // let (new_indexes, new_palette) = (indexes, &palette.entries);
+    let a : Vec<_>;
+    let b : Vec<_>;
+    let (new_indexes, new_palette) : (&[u8], &[quantizr::Color]) = if reorder_palette {
+        (a, b) = reorder_palette_by_brightness(&indexes, palette);
+        (a.as_slice(), b.as_slice())
+    } else {
+        (indexes.as_slice(), &palette.entries[0..(palette.count as usize)])
+    };
 
     // -------------------- cut here --------------------
 
@@ -127,12 +133,12 @@ fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : 
     // Turn the quantized thing back into RGB for display
     let mut fb: Vec<u8> = vec![0u8; width * height * 4];
     if !grayscale_output {
-        for (index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
+        for (&index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
             let c : quantizr::Color = new_palette[index as usize];
             pixel.copy_from_slice(&[c.r, c.g, c.b, c.a]);
         }
     } else {
-        for (index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
+        for (&index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
             let index : u8 = index*palette.count as u8;
             pixel.copy_from_slice(&[index, index, index, index]);
         }
@@ -159,6 +165,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting");
     let mut grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale");
+    let mut reorder_palette_toggle = CheckButton::default().with_label("Sort palette");
+    reorder_palette_toggle.set_checked(true);
 
     row.fixed(&col, 200);
     col.fixed(&openbtn, 50);
@@ -173,6 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut wn = wind.clone();
         let gr_toggle = grayscale_toggle.clone();
         let gr_output_toggle = grayscale_output_toggle.clone();
+        let reorder_palette_toggle = reorder_palette_toggle.clone();
         let imagepath = Arc::clone(&imagepath_arc);
         move || {
             println!("loadimage called");
@@ -204,7 +213,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
 
-            let qresult = quantize_image(&bytes, width, height, 16, gr_output_toggle.is_checked());
+            let qresult = quantize_image(&bytes, width, height, 16, gr_output_toggle.is_checked(), reorder_palette_toggle.is_checked());
             let Ok(rgbimage) = qresult else {
                 let msg = format!("Quantization failed: {qresult:?}");
                 eprintln!("{}", msg);
@@ -258,6 +267,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    reorder_palette_toggle.set_callback({
+        let loadimage = Arc::clone(&loadimage_arc);
+        move |_| {
+            loadimage.lock().unwrap()();
+        }
+    });
     col.end();
     row.end();
     wind.end();
