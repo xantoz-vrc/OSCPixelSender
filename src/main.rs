@@ -110,7 +110,7 @@ fn get_file(dialogtype: dialog::FileDialogType) -> Option<PathBuf> {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, EnumIter, EnumString, IntoStaticStr)]
+#[derive(Debug, Clone, Default, PartialEq, VariantNames, EnumString)]
 pub enum ScalerType {
     #[default]
     XZBilinear,
@@ -121,10 +121,7 @@ pub enum ScalerType {
     ImageCrateLanczos3,
 }
 
-// Seems like maybe we could replace EnumString & IntoStaticStr with just the Display trait from strum?
-// Using .to_string() to stringify and String::from("foo") to parse
-// We could use VariantNames to get an array of strings instead of EnumIter
-#[derive(Debug, Clone, Default, PartialEq, EnumIter, EnumString, IntoStaticStr)]
+#[derive(Debug, Clone, Default, PartialEq, VariantNames, EnumString)]
 pub enum ResizeType {
     #[default]
     ToFill,
@@ -923,12 +920,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut resize_type_choice = menu::Choice::default()
         .with_label("Scaling fit:")
         .with_id("resize_type_choice");
-    resize_type_choice.add_choice(&ResizeType::iter().map(|e| e.into()).collect::<Vec<&'static str>>().join("|"));
+    resize_type_choice.add_choice(&ResizeType::VARIANTS.join("|"));
     resize_type_choice.set_value(0);
     let mut scaler_type_choice = menu::Choice::default()
         .with_label("Scaler algorithm:")
         .with_id("scaler_type_choice");
-    scaler_type_choice.add_choice(&ScalerType::iter().map(|e| e.into()).collect::<Vec<&'static str>>().join("|"));
+    scaler_type_choice.add_choice(&ScalerType::VARIANTS.join("|"));
     scaler_type_choice.set_value(0);
 
     let mut multiplier_choice = menu::Choice::default()
