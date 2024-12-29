@@ -29,10 +29,10 @@ fn print_type_of<T>(_: &T) {
     println!("{}", std::any::type_name::<T>());
 }
 
-#[derive(Debug, Clone)]
 pub enum AppMessage {
     SetTitle(String),
     Alert(String),
+    CreateWindow(i32, i32, String, Box<dyn FnOnce(&mut Window) -> Result<(), Box<dyn Error>> + Send + Sync>),
 }
 
 #[derive(Debug, Clone)]
@@ -238,6 +238,8 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
     use std::net::{SocketAddrV4, UdpSocket};
     use std::str::FromStr;
     use std::time::Duration;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     let appmsg = appmsg.clone();
     let indexes = indexes.clone();
@@ -256,6 +258,36 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
         println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
 
         match || -> Result<(), Box<dyn Error>> {
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+
+            // New windows need to be created on the main thread, so we message the main thread
+            appmsg.send({
+                let cancel_flag = Arc::clone(&cancel_flag);
+                AppMessage::CreateWindow(
+                    400, 200, "Sending OSC".to_string(),
+                    Box::new(move |win| -> Result<(), Box<dyn Error>> {
+                        let col = Flex::default_fill().column();
+
+                        let mut progress = fltk::misc::Progress::default_fill();
+                        progress.set_minimum(0.0);
+                        progress.set_maximum(100.0);
+                        progress.set_value(50.5);
+
+                        let mut cancel_btn = Button::default().with_label("Cancel");
+                        cancel_btn.set_callback(move |_btn| {
+                            cancel_flag.store(true, Ordering::Relaxed);
+                            // TODO:
+                            //Window::delete(*win);
+                        });
+
+                        col.end();
+
+                        Ok(())
+                    })
+                )
+            })?;
+            fltk::app::awake();
+
             let duration = Duration::from_secs_f32(sleep_time);
 
             let mut msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
@@ -279,6 +311,11 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
             let mut count: usize = 0;
             let countmax: usize = chunks.len();
             for index16 in chunks {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    println!("{}", "Send OSC thread cancelled");
+                    break;
+                }
+
                 let mut n: u32 = 0;
                 for index in index16 {
                     let valuename = format!("V{:X}", n);
@@ -318,6 +355,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
             },
         };
     });
+
 
     Ok(())
 }
@@ -776,6 +814,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(msg) => match msg {
                 AppMessage::Alert(s)    => dialog::alert_default(&s),
                 AppMessage::SetTitle(s) => wind.set_label(&s),
+                AppMessage::CreateWindow(width, height, title, f) => {
+                    println!("Creating window {title}({width},{height})");
+                    let mut wind = Window::default().with_size(width, height);
+                    wind.set_label(&title);
+                    let res = f(&mut wind);
+                    wind.end();
+                    wind.show();
+                    if let Err(err) = res {
+                        let msg = format!("CreateWindow error: {err}");
+                        eprintln!("{}", msg);
+                        dialog::alert_default(&msg);
+
+                        // TODO: Kill the window if the callback failed
+                    }
+                },
             },
             Err(mpsc::TryRecvError::Empty) => (),
             Err(err) => eprintln!("Channel error: {err}"),
