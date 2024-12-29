@@ -244,6 +244,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                 let s = format!("Error receiving from mq::MessageQueueReceiver: {}", recvres.unwrap_err());
                 eprintln!("{}", s);
                 print_err(appmsg.send(AppMessage::Alert(s)));
+                fltk::app::awake();
                 continue;
             };
 
@@ -284,6 +285,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             eprintln!("{}", msg);
                             print_err(appmsg.send(AppMessage::Alert(msg)));
                             print_err(sender.send(BgMessage::ClearImage));
+                            fltk::app::awake();
                         }
                     }
                 },
@@ -312,6 +314,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             let msg = format!("ClearImage fail:\n{errmsg}");
                             eprintln!("{}", msg);
                             print_err(appmsg.send(AppMessage::Alert(msg)));
+                            fltk::app::awake();
                         }
                     };
                 },
@@ -399,6 +402,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             eprintln!("{}", msg);
                             print_err(appmsg.send(AppMessage::Alert(msg)));
                             print_err(sender.send(BgMessage::ClearImage));
+                            fltk::app::awake();
                         },
                     };
                 },
@@ -465,6 +469,7 @@ fn send_updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSend
             let msg = format!("{}:\n{}", function!(), errmsg);
             eprintln!("{}", msg);
             print_err(appmsg.send(AppMessage::Alert(msg)));
+            fltk::app::awake();
         },
     }
 }
@@ -573,6 +578,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let msg = format!("{}", sendresult.unwrap_err());
                 eprintln!("{}", msg);
                 print_err(appmsg.send(AppMessage::Alert(msg)));
+                fltk::app::awake();
             }
         }
     });
@@ -620,6 +626,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // invoke the default handler, but then display an alert message
             orig_hook(panic_info);
             print_err(appmsg.send(AppMessage::Alert(format!("{panic_info}"))));
+            fltk::app::awake();
         }
     }));
 
