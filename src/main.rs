@@ -82,10 +82,6 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
     dbg!(palette.entries[0..(palette.count as usize)].iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
     dbg!(new_palette.iter().map(|c| format!("{:03}, {:03}, {:03}, {:03}", c.r, c.g, c.b, c.a)).collect::<Vec<_>>());
 
-    // for (new_idx, old_idx) in permutation.iter().enumerate() {
-    //     palette.entries.swap(new_idx, *old_idx);
-    // }
-
     // Trying out fancy rayon parallel iterators
     // let new_indexes : Vec<u8> = indexes.par_iter().map(
     //     |ic| permutation[*ic as usize] as u8
@@ -94,11 +90,10 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
         |ic| permutation.iter().position(|&r| r == *ic as usize).unwrap_or_default() as u8
     ).collect();
 
-    //(new_indexes.deref(), new_palette.deref())
     (new_indexes, new_palette)
 }
 
-// Make it palletted image and then we reconvert it back to RgbImage
+// Make it paletted image and then we reconvert it back to RgbImage
 // for display (I haven't found a way to display paletted images directly in FLTK)
 //
 // TODO: Split this up into two functions, one which returns the
