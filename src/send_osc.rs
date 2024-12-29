@@ -180,7 +180,7 @@ pub fn send_osc(
     options: SendOSCOpts,
 ) -> Result<(), Box<dyn Error>> {
     if indexes.len() == 0 || width == 0 || height == 0 {
-        return Err("indexes, width or height are 0 and they should't be".into());
+        return Err("indexes, width or height are 0 and they shouldn't be".into());
     }
 
     if indexes.len() != (width as usize) * (height as usize) {
