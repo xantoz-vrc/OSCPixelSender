@@ -36,6 +36,7 @@ pub enum AppMessage {
     //       Since I think calling window.show() might need to be from the main thread as well this will probably require another message
     //       to show a window
     CreateWindow(i32, i32, String, Box<dyn FnOnce(&mut Window) -> Result<(), Box<dyn Error>> + Send + Sync>),
+    DeleteWindow(Window),
 }
 
 #[derive(Debug, Clone)]
@@ -244,10 +245,6 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
-    let appmsg = appmsg.clone();
-    let indexes = indexes.clone();
-    let palette = palette.clone();
-
     let host_addr = SocketAddrV4::from_str("127.0.0.1:9002")?;
     let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
     let sock = UdpSocket::bind(host_addr)?;
@@ -274,9 +271,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
 
                 let cancel_cb = {
                     let cancel_flag = Arc::clone(&cancel_flag);
-                    let mut win = win.clone();
                     move || {
-                        win.hide();
                         cancel_flag.store(true, Ordering::Relaxed);
                     }
                 };
@@ -311,6 +306,10 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
     fltk::app::awake();
 
     let (mut win, mut progressbar) = rx.recv()?;
+
+    let appmsg = appmsg.clone();
+    let indexes = indexes.clone();
+    let palette = palette.clone();
 
     thread::spawn(move || -> () {
 
@@ -376,8 +375,11 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
                 thread::sleep(duration);
             }
 
-            win.hide();  // Needed because Window::delete doesn't cause the window to disappear immediately for some reason
-            Window::delete(win);
+            // TODO: this .hide here might actually need to be called on the main thread for portability and such
+
+            // win.hide();  // Needed because Window::delete doesn't cause the window to disappear immediately for some reason
+            // Window::delete(win);
+            appmsg.send(AppMessage::DeleteWindow(win))?;
             fltk::app::awake();
 
             Ok(())
@@ -873,6 +875,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         // Something failed, delete the window
                         Window::delete(wind);
                     }
+                },
+                AppMessage::DeleteWindow(mut window) => {
+                    window.hide();
+                    Window::delete(window);
                 },
             },
             Err(mpsc::TryRecvError::Empty) => (),
