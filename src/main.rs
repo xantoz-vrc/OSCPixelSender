@@ -741,7 +741,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     divider.set_color(Color::Black);
     divider.set_frame(FrameType::FlatBox);
 
-    const OSC_SPEED_DEFAULT: f64 = 2.0;
+    const OSC_SPEED_DEFAULT: f64 = 5.0;
     let mut send_osc_btn = Button::default().with_label("Send OSC").with_id("send_osc_btn");
     send_osc_btn.deactivate();
     let mut osc_speed_slider = HorValueSlider::default().with_label("OSC updates/second").with_id("osc_speed_slider");
