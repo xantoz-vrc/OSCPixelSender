@@ -643,7 +643,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let pixfmt_choices = send_osc::PixFmt::into_iter().map(|p| p.to_string()).reduce(|acc, s| format!("{acc}|{s}")).unwrap();
     // let pixfmt_choices = send_osc::PixFmt::into_iter().map(|p| p.to_string()).join("|");
     let pixfmt_choices = send_osc::PixFmt::VALUES.map(|p| p.to_string()).join("|");
-    dbg!(&pixfmt_choices);
     osc_pixfmt_choice.add_choice(&pixfmt_choices);
     osc_pixfmt_choice.set_callback(|c| {
         println!("osc_pixfmt_choice: {:?}", c.choice())
@@ -748,9 +747,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     multiplier_choice.set_callback({
         let bg = bg.clone();
         let appmsg = appmsg.clone();
-        move |m| {
-            println!("multiplier_choice: {:?}", m.choice());
-            // m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
+        move |_| {
             send_updateimage(&appmsg, &bg);
         }
     });
