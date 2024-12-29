@@ -181,7 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut row = Flex::default_fill().row();
     // row.set_margin(20);
     row.set_spacing(20);
-    let mut frame = Frame::default_fill();
+    let mut frame = Frame::default_fill().with_id("frame");
     frame.set_frame(FrameType::DownBox);
 
     let mut col = Flex::default_fill().column();
@@ -220,9 +220,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     static IMAGEPATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 
     let clearimage = Arc::new(Mutex::new({
-        let mut frame = frame.clone();
         let send = send.clone();
         move || {
+            let mut frame: Frame = app::widget_from_id("frame").unwrap();
+
             *(IMAGEPATH.write().unwrap()) = None;
             frame.set_image(None::<SharedImage>);
             frame.set_label("Clear");
@@ -232,7 +233,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }));
 
     let loadimage = Arc::new(Mutex::new({
-        let frame = frame.clone();
         let no_quantize_toggle = no_quantize_toggle.clone();
         let grayscale_toggle = grayscale_toggle.clone();
         let grayscale_output_toggle = grayscale_output_toggle.clone();
@@ -246,7 +246,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("loadimage called");
 
             thread::spawn({
-                let mut frame = frame.clone();
                 let no_quantize_toggle = no_quantize_toggle.clone();
                 let grayscale_toggle = grayscale_toggle.clone();
                 let grayscale_output_toggle = grayscale_output_toggle.clone();
@@ -257,6 +256,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let send = send.clone();
 
                 move || {
+                    let mut frame: Frame = app::widget_from_id("frame").unwrap();
+
                     // Clone the path, we do not want to keep holding the
                     // lock. It can lead to deadlock with clearimage otherwise
                     // for one.
