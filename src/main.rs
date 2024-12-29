@@ -125,6 +125,7 @@ pub enum ScalerType {
 pub enum ResizeType {
     #[default]
     ToFill,
+    Stretch,
     ToFit,
 }
 
@@ -145,25 +146,40 @@ fn scale_image_bilinear(src: &[u8],
 
     assert!(src.len() == width * height * 4); // RGBA format assumed
 
-    let (nwidth, nheight): (usize, usize) = match resize {
-        ResizeType::ToFill => (nwidth, nheight), // TODO: In this case we need to change width and height as well unless we squish...
+    let (src_x_offset, src_y_offset, from_width, from_height, nwidth, nheight): (F, F, usize, usize, usize, usize) = match resize {
+        ResizeType::ToFill => {
+            if width > height { // Wider than all
+                (((width - height) as F)/2.0, 0.0,
+                 height, height,
+                 nwidth, nheight)
+            } else { // Taller than wide (or square)
+                (0.0, ((height - width) as F)/2.0,
+                 width, width,
+                 nwidth, nheight)
+            }
+        }
+        ResizeType::Stretch => (0.0, 0.0, width, height, nwidth, nheight),
         ResizeType::ToFit => {
             if width > height {
                 // Wider than tall
                 let aspect_ratio: F = (width as F)/(height as F);
-                (nwidth, ((nheight as F)/aspect_ratio).round() as usize)
+                (0.0, 0.0,
+                 width, height,
+                 nwidth, ((nheight as F)/aspect_ratio).round() as usize)
             } else {
                 // Taller than wide (or square)
                 let aspect_ratio: F = (height as F)/(width as F);
-                (((nwidth as F)/aspect_ratio).round() as usize, nheight)
+                (0.0, 0.0,
+                 width, height,
+                 ((nwidth as F)/aspect_ratio).round() as usize, nheight)
             }
         },
     };
 
-    println!("{}: width={width}, height={height}, nwidth={nwidth}, nheight={nheight}", function!());
+    println!("{}: src_x_offset={src_x_offset:.2}, src_y_offset={src_y_offset:.2} from_width={from_width}, from_height={from_height}, nwidth={nwidth}, nheight={nheight}", function!());
 
-    let x_scale: F = (width as F)/(nwidth as F);
-    let y_scale: F = (height as F)/(nheight as F);
+    let x_scale: F = (from_width as F)/(nwidth as F);
+    let y_scale: F = (from_height as F)/(nheight as F);
 
     let mut buffer: Vec<u8> = vec![0u8; nwidth * nheight * 4];
     // Parallelized using rayon
@@ -173,7 +189,7 @@ fn scale_image_bilinear(src: &[u8],
 
         let (idst_x, idst_y) = (i % nwidth, i / nwidth);
         let (dst_x, dst_y) = (idst_x as F, idst_y as F);
-        let (src_x, src_y) = (dst_x*x_scale, dst_y*y_scale);
+        let (src_x, src_y) = (src_x_offset + dst_x*x_scale, src_y_offset + dst_y*y_scale);
 
         let src_ul = (src_x.floor(), src_y.floor());
         let src_ur = (src_x.ceil(),  src_y.floor());
@@ -248,8 +264,9 @@ fn scale_image_imagecrate(
     let img = image::RgbaImage::from_raw(width as u32, height as u32, bytes).ok_or("bytes not big enough for width and height")?;
     let dimg = image::DynamicImage::from(img);
     let newimg = match resize {
-        ResizeType::ToFill => dimg.resize_to_fill(nwidth, nheight, filter_type),
-        ResizeType::ToFit  =>         dimg.resize(nwidth, nheight, filter_type),
+        ResizeType::ToFill =>  dimg.resize_to_fill(nwidth, nheight, filter_type),
+        ResizeType::Stretch => dimg.resize_exact(nwidth, nheight, filter_type),
+        ResizeType::ToFit =>   dimg.resize(nwidth, nheight, filter_type),
     }.into_rgba8();
 
     let (w, h): (u32, u32) = newimg.dimensions();
