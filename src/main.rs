@@ -175,7 +175,7 @@ fn quantized_image_to_rgbimage(indexes : &Vec<u8>,
 fn main() -> Result<(), Box<dyn Error>> {
     let app = app::App::default().with_scheme(app::Scheme::Gleam);
     // let app = app::App::default().with_scheme(app::Scheme::Oxy);
-    let mut wind = Window::default().with_size(800, 600);
+    let mut wind = Window::default().with_size(1600, 900);
 
     let mut row = Flex::default_fill().row();
     // row.set_margin(20);
