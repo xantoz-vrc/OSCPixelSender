@@ -229,49 +229,38 @@ pub fn send_osc(
 
     thread::spawn(move || -> () {
 
+        let send_bool = |var: &str, b: bool| -> Result<usize, Box<dyn Error>> {
+            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/{var}"),
+                args: vec![OscType::Bool(b)],
+            }))?;
+            Ok(sock.send_to(&msg_buf, to_addr)?)
+        };
+
+        let send_int = |var: &str, i: i32| -> Result<usize, Box<dyn Error>> {
+            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                addr: format!("{OSC_PREFIX}/{var}"),
+                args: vec![OscType::Int(i)],
+            }))?;
+            Ok(sock.send_to(&msg_buf, to_addr)?)
+        };
+
         println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
 
         match || -> Result<(), Box<dyn Error>> {
             let duration = Duration::from_secs_f64(sleep_time);
 
             // Reset CLK
-
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
-                args: vec![OscType::Bool(true)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
+            send_bool("CLK", true)?;
             thread::sleep(duration);
 
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
-                args: vec![OscType::Bool(false)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
+            send_bool("CLK", false)?;
             thread::sleep(duration);
 
             // Reset pixel
-
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/V0"),
-                args: vec![OscType::Int(0)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/Reset"),
-                args: vec![OscType::Bool(true)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
-                args: vec![OscType::Bool(true)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
+            send_int("V0", 0)?;
+            send_bool("Reset", true)?;
+            send_bool("CLK", true)?;
             thread::sleep(duration);
 
             // Set BPP
@@ -284,29 +273,14 @@ pub fn send_osc(
             };
             let cmd: &[u8] = &[0b10000000, 2, 0, bpp_val, 0, 0, 0];
             for (n, val) in cmd.iter().enumerate() {
-                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                    addr: format!("{OSC_PREFIX}/V{:X}", n),
-                    args: vec![OscType::Int(*val as i32)],
-                }))?;
-                sock.send_to(&msg_buf, to_addr)?;
+                send_int(&format!("V{n:X}"), *val as i32)?;
             }
-
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
-                args: vec![OscType::Bool(false)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
+            send_bool("CLK", false)?;
             thread::sleep(duration);
 
             // Reset the reset bit
             println!("Reset the reset bit");
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/Reset"),
-                args: vec![OscType::Bool(false)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
+            send_bool("Reset", false)?;
             thread::sleep(duration);
 
             let now = std::time::Instant::now();
@@ -326,20 +300,10 @@ pub fn send_osc(
                 println!("{index16:?}");
 
                 for (n, index) in index16.iter().enumerate() {
-                    let valuename = format!("V{:X}", n);
-                    let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                        addr: format!("{OSC_PREFIX}/{valuename}"),
-                        args: vec![OscType::Int(*index as i32)],
-                    }))?;
-                    sock.send_to(&msg_buf, to_addr)?;
+                    send_int(&format!("V{n:X}"), *index as i32)?;
                 }
 
-                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                    addr: format!("{OSC_PREFIX}/CLK"),
-                    args: vec![OscType::Bool(clk)],
-                }))?;
-                sock.send_to(&msg_buf, to_addr)?;
-
+                send_bool("CLK", clk)?;
                 clk = !clk;
                 count += 1;
 
