@@ -181,8 +181,6 @@ pub fn send_osc(
     let (cancel_flag, win, mut progressbar) = create_progressbar_window(appmsg)?;
 
     let appmsg = appmsg.clone();
-    // let indexes: Vec<u8> = indexes.iter().copied().rev().collect();
-    // let indexes = indexes.clone();
     let palette = palette.clone();
 
     // TODO: de-duplicate code with save_png
@@ -310,15 +308,7 @@ pub fn send_osc(
             sock.send_to(&msg_buf, to_addr)?;
 
             thread::sleep(duration);
-/*
-            let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
-                args: vec![OscType::Bool(false)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
 
-            thread::sleep(duration);
-*/
             let now = std::time::Instant::now();
 
             let mut clk: bool = true;
