@@ -215,9 +215,12 @@ fn send_noerr<T: std::any::Any>(sender: &mpsc::Sender<T>, msg: T) -> () {
     }
 }
 
-fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
+fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::SyncSender<BgMessage> {
+    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(1);
+// fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
+//     let (sender, receiver) = mpsc::channel::<BgMessage>();
+
     let appmsg = appmsg_sender.clone();
-    let (sender, receiver) = mpsc::channel::<BgMessage>();
     let sender_return = sender.clone();
 
     thread::spawn(move || {
@@ -355,7 +358,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::S
                             let msg = format!("UpdateImage fail:\n{errmsg}");
                             eprintln!("{}", msg);
                             send_noerr(&appmsg, AppMessage::Alert(msg));
-                            send_noerr(&sender, BgMessage::ClearImage);
+                            sender.send(BgMessage::ClearImage).unwrap();
                         },
                     }
                 },
@@ -445,13 +448,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
 
-            match || -> Result<(), String> {
-                try_send(&bg_send, BgMessage::LoadImage(path))?;
-                try_send(&bg_send, BgMessage::UpdateImage)?;
+            match || -> Result<(), Box<dyn Error>> {
+                bg_send.send(BgMessage::LoadImage(path))?;
+                bg_send.send(BgMessage::UpdateImage)?;
                 Ok(())
             }() {
                 Ok(()) => (),
-                Err(msg) => {
+                Err(err) => {
+                    let msg = format!("Openbtn fail: {:?}", err);
                     eprintln!("{}", msg);
                     send_noerr(&appmsg_send, AppMessage::Alert(msg));
                 }
@@ -474,20 +478,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    no_quantize_toggle.set_callback(     { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
-    grayscale_toggle.set_callback(       { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
-    grayscale_output_toggle.set_callback({ let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
-    reorder_palette_toggle.set_callback( { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
-    maxcolors_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
-    dithering_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
-    scaling_toggle.set_callback(         { let bg_send = bg_send.clone(); move |_| send_noerr(&bg_send, BgMessage::UpdateImage) });
+    no_quantize_toggle.set_callback(     { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
+    grayscale_toggle.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
+    grayscale_output_toggle.set_callback({ let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
+    reorder_palette_toggle.set_callback( { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
+    maxcolors_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
+    dithering_slider.set_callback(       { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
+    scaling_toggle.set_callback(         { let bg_send = bg_send.clone(); move |_| { bg_send.send(BgMessage::UpdateImage).unwrap(); } });
     scale_input.set_callback({
         let bg_send = bg_send.clone();
         move |i| {
             let value = i.value();
             println!("scale_input: i.value() = {:?}, i.active={:?}", i.value(), i.active());
             if value.len() > 0 {
-                send_noerr(&bg_send, BgMessage::UpdateImage)
+                bg_send.send(BgMessage::UpdateImage).unwrap();
             } else {
                 i.set_value(SCALE_DEFAULT);
             }
@@ -498,7 +502,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |m| {
             println!("multiplier_menubutton: m.choice() = {:?}", m.choice());
             m.set_label(&format!("Display scale multiplier: {}", m.choice().unwrap_or("NOT SET".to_string())));
-            send_noerr(&bg_send, BgMessage::UpdateImage);
+            bg_send.send(BgMessage::UpdateImage).unwrap();
         }
     });
 
