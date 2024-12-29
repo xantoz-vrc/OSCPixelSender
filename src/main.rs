@@ -107,7 +107,7 @@ fn reorder_palette_by_brightness(indexes : &Vec<u8>, palette : &quantizr::Palett
 // TODO: Split this up into two functions, one which returns the
 // indexes+palette and another which turns indexes + palette into an
 // RGBImage for display
-fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32) -> Result<RgbImage, Box<dyn Error>> {
+fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : i32, grayscale_output : bool) -> Result<RgbImage, Box<dyn Error>> {
 
     let qimage = quantizr::Image::new(bytes, width, height)?;
     let mut qopts = quantizr::Options::default();
@@ -129,23 +129,17 @@ fn quantize_image(bytes : &Vec<u8>, width : usize, height : usize, max_colors : 
 
     // Turn the quantized thing back into RGB for display
     let mut fb: Vec<u8> = vec![0u8; width * height * 4];
-    for (index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
-        let c : quantizr::Color = new_palette[index as usize];
-        pixel.copy_from_slice(&[c.r, c.g, c.b, c.a]);
+    if !grayscale_output {
+        for (index, pixel) in zip(new_indexes, fb.chunks_exact_mut(4)) {
+            let c : quantizr::Color = new_palette[index as usize];
+            pixel.copy_from_slice(&[c.r, c.g, c.b, c.a]);
+        }
+    } else {
+        for (index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
+            let index : u8 = index*palette.count as u8;
+            pixel.copy_from_slice(&[index, index, index, index]);
+        }
     }
-
-/*
-    let mut fb: Vec<u8> = vec![0u8; width * height * 4];
-    for (index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
-    }
-
-/*
-    let mut fb: Vec<u8> = vec![0u8; width * height * 4];
-    for (index, pixel) in zip(indexes, fb.chunks_exact_mut(4)) {
-        let index : u8 = index*palette.count as u8;
-        pixel.copy_from_slice(&[index, index, index, index]);
-    }
-*/
 
     Ok(RgbImage::new(&fb, width as i32, height as i32, ColorDepth::Rgba8)?)
 }
@@ -207,7 +201,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         return;
                     };
 
-                    let qresult = quantize_image(&bytes, width, height, 16);
+                    let qresult = quantize_image(&bytes, width, height, 16, false);
                     let Ok(rgbimage) = qresult else {
                         let msg = format!("Quantization failed: {qresult:?}");
                         eprintln!("{}", msg);
