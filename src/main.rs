@@ -173,6 +173,27 @@ fn quantized_image_to_rgbimage(indexes : &Vec<u8>,
     Ok(RgbImage::new(&fb, width as i32, height as i32, ColorDepth::Rgba8)?)
 }
 
+fn palette_to_rgbimage(palette: &[quantizr::Color], grayscale_output: bool) -> Result<RgbImage, Box<dyn Error>> {
+    let mut fb: Vec<u8> = vec![0u8; palette.len() * 4];
+    let width: i32 = 1;
+    let height: i32 = palette.len().try_into()?;
+
+    if !grayscale_output {
+        for (&col, pixel) in zip(palette, fb.chunks_exact_mut(4)) {
+            pixel.copy_from_slice(&[col.r, col.g, col.b, 255]);
+        }
+    } else {
+        let range: std::ops::Range<u8> = 0..(palette.len() as u8 - 1);
+        for (i, pixel) in zip(range, fb.chunks_exact_mut(4)) {
+            let max: f64 = (palette.len()-1) as f64;
+            let val: u8 = (i as f64 * (255.0/max)).round() as u8;
+            pixel.copy_from_slice(&[val, val, val, 255]);
+        }
+    }
+
+    Ok(RgbImage::new(&fb, width, height, ColorDepth::Rgba8)?)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let app = app::App::default().with_scheme(app::Scheme::Gleam);
     // let app = app::App::default().with_scheme(app::Scheme::Oxy);
@@ -183,6 +204,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     row.set_spacing(20);
     let mut frame = Frame::default_fill().with_id("frame");
     frame.set_frame(FrameType::DownBox);
+
+    let palette_frame = Frame::default_fill().with_id("palette_frame");
+    // palette_frame.set_frame(FrameType::DownBox);
 
     let mut col = Flex::default_fill().column();
     col.set_margin(20);
@@ -221,6 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     multiplier_menubutton.add_choice("1x\t|2x\t|3x\t|4x\t|5x");
     multiplier_menubutton.set_value(4);
 
+    row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
@@ -285,6 +310,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             match (
                 || -> Result<(), String> {
                     let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+                    let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
                     let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
                     let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
                     let grayscale_output_toggle: CheckButton = app::widget_from_id("grayscale_output_toggle").ok_or("widget_from_id fail")?;
@@ -362,6 +388,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                             rgbimage.scale((width*multiplier) as i32, (height*multiplier) as i32, true, true); // Display pixelly image larger
                         }
                         frame.set_image(Some(rgbimage));
+
+                        let palette_rgbimage = palette_to_rgbimage(&palette, grayscale_output_toggle.is_checked())
+                            .map_err(|err| format!("Couldn't generate palette RgbImage: {err:?}"))?;
+                        palette_frame.set_image_scaled(Some(palette_rgbimage));
+                        palette_frame.changed();
+                        palette_frame.redraw();
                     } else {
                         frame.set_image(Some(image));
                     }
@@ -369,6 +401,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let pathstr = path.to_string_lossy();
                     frame.set_label(&pathstr);
                     frame.changed();
+                    frame.redraw();
                     fltk::app::awake();
                     try_send(AppMessage::SetTitle(pathstr.to_string()))?;
 
