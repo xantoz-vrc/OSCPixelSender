@@ -209,16 +209,25 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let imagepath : Arc<RwLock<Option<PathBuf>>> = Arc::new(RwLock::new(None));
 
+    fn set_window_label_clear() {
+        println!("Entered {}", function!());
+        let mut windows = fltk::app::windows();
+        let Some([ref mut window]) = windows.as_deref_mut() else {
+            eprintln!("{}: Couldn't find window", function!());
+            return;
+        };
+        window.set_label("Clear");
+    }
+
     let clearimage = Arc::new(Mutex::new({
         let mut frame = frame.clone();
-        let mut wind = wind.clone();
         let imagepath = Arc::clone(&imagepath);
         move || {
             *(imagepath.write().unwrap()) = None;
             frame.set_image(None::<SharedImage>);
             frame.set_label("Clear");
             frame.changed();
-            wind.set_label("Clear");
+            fltk::app::awake_callback(set_window_label_clear);
         }
     }));
 
