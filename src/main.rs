@@ -334,6 +334,22 @@ mod send_osc {
                 let duration = Duration::from_secs_f64(sleep_time);
 
                 let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: format!("{OSC_PREFIX}/CLK"),
+                    args: vec![OscType::Bool(true)],
+                }))?;
+                sock.send_to(&msg_buf, to_addr)?;
+
+                thread::sleep(duration);
+
+                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: format!("{OSC_PREFIX}/CLK"),
+                    args: vec![OscType::Bool(false)],
+                }))?;
+                sock.send_to(&msg_buf, to_addr)?;
+
+                thread::sleep(duration);
+
+                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                     addr: format!("{OSC_PREFIX}/Reset"),
                     args: vec![OscType::Bool(true)],
                 }))?;
