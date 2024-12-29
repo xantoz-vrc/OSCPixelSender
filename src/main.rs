@@ -236,7 +236,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
     let sender_return = sender.clone();
 
     let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
-        let mut imagepath: Option<PathBuf> = None;
+        let mut sharedimage: Option<SharedImage> = None;
         let mut run: bool = true;
 
         while run {
@@ -255,14 +255,42 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         break;
                     },
                     BgMessage::LoadImage(path) => {
-                        imagepath = Some(path);
+                        match || -> Result<(), String> {
+                            let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
+
+                            // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
+                            //       We should only convert to FLTK image format at the very end
+                            let image = SharedImage::load(&path)
+                                .map_err(|err| format!("Image load for image {path:?} failed: {err:}"))?;
+
+                            sharedimage = Some(image);
+                            println!("Loaded image {path:?}");
+
+                            let pathstr = path.to_string_lossy();
+                            frame.set_label(&pathstr);
+                            frame.changed();
+                            frame.redraw();
+                            fltk::app::awake();
+                            appmsg.send(AppMessage::SetTitle(pathstr.to_string())).
+                                map_err(|err| format!("Send error: {err}"))?;
+
+                            println!("Finished LoadImage for {path:?}");
+                            Ok(())
+                        }() {
+                            Ok(()) => (),
+                            Err(errmsg) => {
+                                let msg = format!("LoadImage fail:\n{errmsg}");
+                                eprintln!("{}", msg);
+                                print_err(appmsg.send(AppMessage::Alert(msg)));
+                            }
+                        }
                     },
                     BgMessage::ClearImage => {
                         match || -> Result<(), String> {
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                             let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
-                            imagepath = None;
+                            sharedimage = None::<SharedImage>;
 
                             frame.set_image(None::<SharedImage>);
                             frame.set_label("Clear");
@@ -301,15 +329,10 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                             let mut palette_frame: Frame = app::widget_from_id("palette_frame").ok_or("widget_from_id fail")?;
 
-                            let Some(ref path) = imagepath else {
-                                eprintln!("UpdateImage: No file selected/imagepath not set");
+                            let Some(ref image) = sharedimage else {
+                                eprintln!("No image loaded");
                                 return Ok(());
                             };
-
-                            // TODO: Switch to using the image crate to load and also to grayscale. Also evaluate it at dithering?
-                            //       We should only convert to FLTK image format at the very end
-                            let image = SharedImage::load(&path).map_err(|err| format!("Image load for image {path:?} failed: {err:}"))?;
-                            println!("Loaded image {path:?}");
 
                             if !no_quantize {
                                 let mut bytes: Vec<u8>;
@@ -350,18 +373,14 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                                 palette_frame.changed();
                                 palette_frame.redraw();
                             } else {
-                                frame.set_image(Some(image));
+                                frame.set_image(Some(image.clone()));
                             }
 
-                            let pathstr = path.to_string_lossy();
-                            frame.set_label(&pathstr);
                             frame.changed();
                             frame.redraw();
                             fltk::app::awake();
-                            appmsg.send(AppMessage::SetTitle(pathstr.to_string())).
-                                map_err(|err| format!("Send error: {err}"))?;
 
-                            println!("Finished processing for {path:?}");
+                            println!("Finished updating image");
 
                             Ok(())
                         }() {
