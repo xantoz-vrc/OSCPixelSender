@@ -29,6 +29,20 @@ fn print_type_of<T>(_: &T) {
     println!("{}", std::any::type_name::<T>());
 }
 
+#[derive(Debug, Clone)]
+pub enum Color {
+    Grayscale,
+    Indexed,
+}
+
+#[derive(Debug, Clone)]
+pub enum PixFmt {
+    Bpp1(Color),
+    Bpp4(Color),
+    Bpp5(Color),
+    Bpp8(Color),
+}
+
 pub enum AppMessage {
     SetTitle(String),
     Alert(String),
@@ -54,7 +68,10 @@ pub enum BgMessage{
         multiplier: u8,
     },
     ClearImage,
-    SendOSC(f32),
+    SendOSC{
+        speed: f64,
+        pixfmt: PixFmt,
+    },
     Quit,
 }
 
@@ -234,7 +251,7 @@ fn print_err<T, E: Error>(result: Result<T, E>) -> () {
     }
 }
 
-fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Vec::<quantizr::Color>, msgs_per_second: f32) -> Result<(), Box<dyn Error>> {
+fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Vec::<quantizr::Color>, msgs_per_second: f64) -> Result<(), Box<dyn Error>> {
     extern crate rosc;
 
     use rosc::encoder;
@@ -249,7 +266,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
     let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
     let sock = UdpSocket::bind(host_addr)?;
 
-    let sleep_time = 1.0f32/msgs_per_second;
+    let sleep_time = 1.0/msgs_per_second;
 
     const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
 
@@ -309,7 +326,7 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
         println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
 
         match || -> Result<(), Box<dyn Error>> {
-            let duration = Duration::from_secs_f32(sleep_time);
+            let duration = Duration::from_secs_f64(sleep_time);
 
             let mut msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                 addr: format!("{OSC_PREFIX}/Reset"),
@@ -339,12 +356,14 @@ fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Ve
             let chunks = indexes.chunks_exact(16);
             let mut count: usize = 0;
             let countmax: usize = chunks.len();
-            let eta = Duration::from_secs_f64((countmax as f64) * (sleep_time as f64));
+            let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
             for index16 in chunks {
                 if cancel_flag.load(Ordering::Relaxed) {
                     println!("{}", "Send OSC thread cancelled");
                     break;
                 }
+
+                dbg!(&index16);
 
                 let mut n: u32 = 0;
                 for index in index16 {
@@ -601,7 +620,11 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         },
                     };
                 },
-                BgMessage::SendOSC(speed) => {
+                BgMessage::SendOSC{
+                    speed,
+                    pixfmt,
+                } => {
+                    println!("SendOSC{{speed: {speed:?}, pixfmt: {pixfmt:?}}}");
                     match || -> Result<(), String> {
                         let (indexes, palette) = indexes_and_palette.as_ref()
                             .ok_or("Indexes and palette not generated yet")?;
@@ -841,8 +864,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         let bg = bg.clone();
         let appmsg = appmsg.clone();
         move |_| {
-            let speed = osc_speed_slider.value() as f32;
-            let result = bg.send(BgMessage::SendOSC(speed));
+            let speed = osc_speed_slider.value();
+            let result = bg.send(
+                BgMessage::SendOSC{
+                    speed: speed,
+                    pixfmt: PixFmt::Bpp8(Color::Grayscale),
+                }
+            );
             if result.is_err() {
                 let msg = format!("Send OSC button error: {:?}", result);
                 eprintln!("{}", msg);
