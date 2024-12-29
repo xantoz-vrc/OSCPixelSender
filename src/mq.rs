@@ -1,8 +1,39 @@
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::collections::vec_deque::{VecDeque};
 use std::marker::{Send, Sync};
+use std::error::Error;
 
-pub type MessageQueueError<'a, T> = PoisonError<MutexGuard<'a, VecDeque<T>>>;
+pub struct SendError<T> {
+    pub data: T,
+    pub message: &'static str,
+}
+
+impl<T> std::fmt::Debug for SendError<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SendError<{}>(message={})", std::any::type_name::<T>(), self.message)
+    }
+}
+
+impl<T> std::fmt::Display for SendError<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl<T> Error for SendError<T> {}
+
+#[derive(Debug)]
+pub struct RecvError {
+    pub message: &'static str,
+}
+
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for RecvError {}
 
 #[derive(Debug, Clone)]
 pub struct MessageQueueSender<T> {
@@ -22,16 +53,24 @@ pub fn mq<T>() -> (MessageQueueSender<T>, MessageQueueReceiver<T>) {
 }
 
 impl<T> MessageQueueSender<T> {
-    pub fn send(&self, val: T) -> Result<(), MessageQueueError<'_, T>> {
-        let mut q = self.queue.0.lock()?;
+    pub fn send(&self, val: T) -> Result<(), SendError<T>> {
+        let lockres = self.queue.0.lock();
+        let Ok(mut q) = lockres else {
+            return Err(SendError::<T> { data: val, message: "Error locking mutex", });
+        };
+
         q.push_back(val);
         self.queue.1.notify_one();
 
         Ok(())
     }
 
-    pub fn send_or_replace(&self, new_val: T) -> Result<(), MessageQueueError<'_, T>> {
-        let mut q = self.queue.0.lock()?;
+    pub fn send_or_replace(&self, new_val: T) -> Result<(), SendError<T>> {
+        let lockres = self.queue.0.lock();
+        let Ok(mut q) = lockres else {
+            return Err(SendError::<T> { data: new_val, message: "Error locking mutex", });
+        };
+
         match q.back_mut() {
             Some(x) => {
                 *x = new_val;
@@ -45,8 +84,12 @@ impl<T> MessageQueueSender<T> {
         Ok(())
     }
 
-    pub fn send_or_replace_if<F: FnOnce(&T) -> bool>(&self, pred: F, new_val: T) -> Result<(), MessageQueueError<'_, T>> {
-        let mut q = self.queue.0.lock()?;
+    pub fn send_or_replace_if<F: FnOnce(&T) -> bool>(&self, pred: F, new_val: T) -> Result<(), SendError<T>> {
+        let lockres = self.queue.0.lock();
+        let Ok(mut q) = lockres else {
+            return Err(SendError::<T> { data: new_val, message: "Error locking mutex", });
+        };
+
         match q.back_mut() {
             Some(x) => {
                 if pred(x) {
@@ -62,9 +105,13 @@ impl<T> MessageQueueSender<T> {
         Ok(())
     }
 
-    pub fn is_empty(&self) -> Result<bool, MessageQueueError<'_, T>> {
-        let guard = self.queue.0.lock()?;
-        Ok(guard.is_empty())
+    pub fn is_empty(&self) -> Result<bool, SendError<()>> {
+        let lockres = self.queue.0.lock();
+        let Ok(q) = lockres else {
+            return Err(SendError::<_> { data: (), message: "Error locking mutex", });
+        };
+
+        Ok(q.is_empty())
     }
 }
 
@@ -72,16 +119,24 @@ unsafe impl<T: Send> Send for MessageQueueSender<T> {}
 unsafe impl<T: Send> Sync for MessageQueueSender<T> {}
 
 impl<T> MessageQueueReceiver<T> {
-    pub fn drain(&self) -> Result<Box<[T]>, MessageQueueError<'_, T>> {
+    fn wait_until_nonempty(&self) -> Result<MutexGuard<'_, VecDeque<T>>, RecvError> {
         let (lock, cvar) = &*self.queue;
-        let mut guard = cvar.wait_while(lock.lock()?, |vd| { vd.is_empty() })?;
+        let guard = cvar.wait_while(
+            lock.lock()
+                .map_err(|_err| RecvError{ message: "Error locking mutex" })?,
+            |vd| { vd.is_empty() },
+        ).map_err(|_err| RecvError{ message: "Error waiting on Condvar" })?;
+        Ok(guard)
+    }
+
+    pub fn drain(&self) -> Result<Box<[T]>, RecvError> {
+        let mut guard = self.wait_until_nonempty()?;
         let drain = guard.drain(..).collect();
         Ok(drain)
     }
 
-    pub fn recv(&self) -> Result<T, MessageQueueError<'_, T>> {
-        let (lock, cvar) = &*self.queue;
-        let mut guard = cvar.wait_while(lock.lock()?, |vd| { vd.is_empty() })?;
+    pub fn recv(&self) -> Result<T, RecvError> {
+        let mut guard = self.wait_until_nonempty()?;
         Ok(guard.pop_front().unwrap())
     }
 }
