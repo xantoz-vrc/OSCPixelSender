@@ -218,10 +218,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }));
 
-    // let loadimage : Arc<Mutex<dyn FnMut()>> = Arc::new(Mutex::new({
     let loadimage = Arc::new(Mutex::new({
         let frame = frame.clone();
-        // let mut wind = wind.clone();
         let no_quantize_toggle = no_quantize_toggle.clone();
         let grayscale_toggle = grayscale_toggle.clone();
         let grayscale_output_toggle = grayscale_output_toggle.clone();
@@ -270,10 +268,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     };
 
                     println!("Loaded image {path:?}");
-
-                    // println!("(before scale) w,h: {},{}", image.width(), image.height());
-                    // //image.scale(256, 256, true, true);
-                    // println!("(after scale) w,h: {},{}", image.width(), image.height());
 
                     if !no_quantize_toggle.is_checked() {
                         let bresult = sharedimage_to_bytes(&image, grayscale_toggle.is_checked());
@@ -376,7 +370,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     panic::set_hook(Box::new({
         let send = send.clone();
         move |panic_info| {
-            // invoke the default handler and exit the process
+            // invoke the default handler, but then display an alert message
             orig_hook(panic_info);
             send.send(Message::Alert(format!("{panic_info}")));
         }
