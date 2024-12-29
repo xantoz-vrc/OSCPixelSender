@@ -657,6 +657,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_label("Scaling fit:")
         .with_id("resize_type_choice");
     resize_type_choice.add_choice(&ResizeType::iter().map(|e| e.into()).collect::<Vec<&'static str>>().join("|"));
+    resize_type_choice.set_value(0);
 
     let mut multiplier_choice = menu::Choice::default()
         .with_label("Display scale multiplier:")
