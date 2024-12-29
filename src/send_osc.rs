@@ -244,6 +244,22 @@ pub fn send_osc(
             Ok(sock.send_to(&msg_buf, to_addr)?)
         };
 
+        let mut send_clk = {
+            let mut clk: bool = true;
+            move || -> Result<usize, Box<dyn Error>> {
+                let result = send_bool("CLK", clk);
+                clk = !clk;
+                result
+            }
+        };
+
+        let send_cmd = |cmd: &[u8]| -> Result<(), Box<dyn Error>> {
+            for (n, val) in cmd.iter().enumerate() {
+                send_int(&format!("V{n:X}"), *val as i32)?;
+            }
+            Ok(())
+        };
+
         let progress_message = |msg: String, progress: f64| -> () {
             println!("{}", msg);
             // Hack to avoid this thread getting held by the app main thread (currently the file choosers cause an issue for one)
@@ -262,7 +278,7 @@ pub fn send_osc(
         match || -> Result<(), Box<dyn Error>> {
             let duration = Duration::from_secs_f64(sleep_time);
 
-            // Reset CLK
+            // Reset CLK (we can use the send_clk helper after here)
             progress_message("Reset CLK".to_string(), 0.0);
             send_bool("CLK", true)?;
             thread::sleep(duration);
@@ -273,7 +289,7 @@ pub fn send_osc(
             progress_message("Reset pixel pos".to_string(), 0.0);
             send_int("V0", 0)?;
             send_bool("Reset", true)?;
-            send_bool("CLK", true)?;
+            send_clk()?;
             thread::sleep(duration);
 
             // Set BPP
@@ -284,11 +300,8 @@ pub fn send_osc(
                 PixFmt::Bpp8(_) => 0,
             };
             progress_message("Set BPP".to_string(), 0.0);
-            let cmd: &[u8] = &[0b10000000, 2, 0, bpp_val, 0, 0, 0];
-            for (n, val) in cmd.iter().enumerate() {
-                send_int(&format!("V{n:X}"), *val as i32)?;
-            }
-            send_bool("CLK", false)?;
+            send_cmd(&[0b10000000, 2, 0, bpp_val, 0, 0, 0])?;
+            send_clk()?;
             thread::sleep(duration);
 
             // Reset the reset bit
@@ -298,7 +311,6 @@ pub fn send_osc(
 
             let now = std::time::Instant::now();
 
-            let mut clk: bool = true;
             let chunks = indexes.chunks_exact(16);
             let countmax: usize = chunks.len();
             let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
@@ -310,13 +322,9 @@ pub fn send_osc(
 
                 //dbg!(&index16);
                 println!("{index16:?}");
+                send_cmd(index16)?;
 
-                for (n, index) in index16.iter().enumerate() {
-                    send_int(&format!("V{n:X}"), *index as i32)?;
-                }
-
-                send_bool("CLK", clk)?;
-                clk = !clk;
+                send_clk()?;
 
                 let progress = ((count as f64)/(countmax as f64))*100.0;
                 let elapsed = now.elapsed();
