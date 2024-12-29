@@ -344,7 +344,7 @@ fn enable_save_and_send_osc_button(active: bool) -> Result<(), String> {
         savebtn.activate();
         send_osc_btn.activate();
     } else {
-        savebtn.activate();
+        savebtn.deactivate();
         send_osc_btn.deactivate();
     }
     fltk::app::awake();
