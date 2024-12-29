@@ -191,8 +191,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut clearbtn = Button::default().with_label("Clear");
 
     let mut no_quantize_toggle = CheckButton::default().with_label("Disable quantization").with_id("no_quantize_toggle");
-    let mut grayscale_toggle = CheckButton::default().with_label("Grayscale the image before converting").with_id("grayscale_toggle");
-    let mut grayscale_output_toggle = CheckButton::default().with_label("Output the palette indexes without using the palette as grayscale").with_id("grayscale_output_toggle");
+    let mut grayscale_toggle = CheckButton::default().with_label("Grayscale the image\nbefore converting").with_id("grayscale_toggle");
+    let mut grayscale_output_toggle = CheckButton::default().with_label("Output the palette\nindexes as grayscale").with_id("grayscale_output_toggle");
     let mut reorder_palette_toggle = CheckButton::default().with_label("Sort palette").with_id("reorder_palette_toggle");
     reorder_palette_toggle.set_checked(true);
 
@@ -224,13 +224,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
     col.fixed(&clearbtn, 50);
-    col.fixed(&no_quantize_toggle, 10);
-    col.fixed(&grayscale_toggle, 10);
-    col.fixed(&grayscale_output_toggle, 10);
-    col.fixed(&reorder_palette_toggle, 10);
+    col.fixed(&no_quantize_toggle, 30);
+    col.fixed(&grayscale_toggle, 30);
+    col.fixed(&grayscale_output_toggle, 20);
+    col.fixed(&reorder_palette_toggle, 20);
     col.fixed(&maxcolors_slider, 30);
     col.fixed(&dithering_slider, 30);
-    col.fixed(&scaling_toggle, 20);
+    col.fixed(&scaling_toggle, 30);
     col.fixed(&scale_input, 30);
     col.fixed(&multiplier_menubutton, 30);
 
