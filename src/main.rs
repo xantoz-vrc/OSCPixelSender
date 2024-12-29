@@ -169,6 +169,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     openbtn.set_callback({
         let mut fr = frame.clone();
         let mut wn = wind.clone();
+        let gr_toggle = grayscale_toggle.clone();
+        let gr_output_toggle = grayscale_output_toggle.clone();
         move |_| {
             println!("Open button pressed");
 
@@ -191,7 +193,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             //image.scale(256, 256, true, true);
             println!("(after scale) w,h: {},{}", image.width(), image.height());
 
-            let bresult = sharedimage_to_bytes(&image, grayscale_toggle.is_checked());
+            let bresult = sharedimage_to_bytes(&image, gr_toggle.is_checked());
             let Ok((bytes, width, height)) = bresult else {
                 let msg = format!("sharedimage_to_bytes failed: {bresult:?}");
                 eprintln!("{}", msg);
@@ -199,7 +201,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return;
             };
 
-            let qresult = quantize_image(&bytes, width, height, 16, grayscale_output_toggle.is_checked());
+            let qresult = quantize_image(&bytes, width, height, 16, gr_output_toggle.is_checked());
             let Ok(rgbimage) = qresult else {
                 let msg = format!("Quantization failed: {qresult:?}");
                 eprintln!("{}", msg);
