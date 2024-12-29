@@ -2,7 +2,7 @@ pub mod mq;
 mod send_osc;
 mod utility;
 
-use utility::{print_err, error_alert};
+use utility::{print_err, alert, error_alert};
 
 use fltk::{app, frame::Frame, enums::*, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
 use std::error::Error;
@@ -48,6 +48,7 @@ pub enum AppMessage {
 #[derive(Debug, Clone)]
 pub enum BgMessage{
     LoadImage(PathBuf),
+    SaveImage(PathBuf),
     UpdateImage{
         no_quantize: bool,
         grayscale: bool,
@@ -260,11 +261,14 @@ fn palette_to_fltk_rgbimage(palette: &[quantizr::Color], grayscale_output: bool)
     Ok(fltk::image::RgbImage::new(&fb, width, height, ColorDepth::Rgba8)?)
 }
 
-fn enable_send_osc_button(active: bool) -> Result<(), String> {
+fn enable_save_and_send_osc_button(active: bool) -> Result<(), String> {
+    let mut savebtn: Button = app::widget_from_id("savebtn").ok_or("widget_from_id fail")?;
     let mut send_osc_btn: Button = app::widget_from_id("send_osc_btn").ok_or("widget_from_id fail")?;
     if active {
+        savebtn.activate();
         send_osc_btn.activate();
     } else {
+        savebtn.activate();
         send_osc_btn.deactivate();
     }
     fltk::app::awake();
@@ -328,6 +332,21 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         }
                     }
                 },
+                BgMessage::SaveImage(path) => {
+                    match || -> Result<(), String> {
+                        let image = rgbaimage.as_ref()
+                            .ok_or("No image loaded")?;
+
+                        image.save(&path)
+                            .map_err(|err| format!("Couldn't save image to {path:?}: {err}"))?;
+
+                        alert(&appmsg, format!("Saved image as {path:?}"));
+                        Ok(())
+                    }() {
+                        Ok(()) => (),
+                        Err(errmsg) => error_alert(&appmsg, format!("SaveImage error:\n{errmsg}")),
+                    }
+                },
                 BgMessage::ClearImage => {
                     match || -> Result<(), String> {
                         let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
@@ -344,7 +363,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                         palette_frame.set_image(None::<fltk::image::RgbImage>);
                         palette_frame.changed();
 
-                        enable_send_osc_button(false)?;
+                        enable_save_and_send_osc_button(false)?;
 
                         appmsg.send(AppMessage::SetTitle("Clear".to_string()))
                             .map_err(|err| format!("Send error: {err}"))?;
@@ -368,7 +387,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     multiplier,
                 } => {
                     match || -> Result<(), String> {
-                        enable_send_osc_button(false)?;
+                        enable_save_and_send_osc_button(false)?;
 
                         let Some(ref image) = rgbaimage else {
                             eprintln!("No image loaded");
@@ -425,7 +444,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             }
 
                             indexes_and_palette = Some((indexes, palette));
-                            enable_send_osc_button(true)?;
+                            enable_save_and_send_osc_button(true)?;
                         } else {
                             let mut frame: Frame = app::widget_from_id("frame").ok_or("widget_from_id fail")?;
                             frame.set_image(Some(
@@ -437,7 +456,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
 
                             // TODO: there should be a fallback here maybe
                             indexes_and_palette = None;
-                            enable_send_osc_button(false)?;
+                            enable_save_and_send_osc_button(false)?;
                         }
 
                         fltk::app::awake();
@@ -550,6 +569,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.set_margin(20);
     col.set_spacing(20);
     let mut openbtn = Button::default().with_label("Open");
+    let mut savebtn = Button::default().with_label("Save").with_id("savebtn");
+    savebtn.deactivate();
     let mut clearbtn = Button::default().with_label("Clear");
 
     let mut no_quantize_toggle = CheckButton::default().with_label("Disable quantization").with_id("no_quantize_toggle");
@@ -614,6 +635,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     row.fixed(&palette_frame, 50);
     row.fixed(&col, 300);
     col.fixed(&openbtn, 50);
+    col.fixed(&savebtn, 50);
     col.fixed(&clearbtn, 50);
     col.fixed(&no_quantize_toggle, 30);
     col.fixed(&grayscale_toggle, 30);
@@ -636,8 +658,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let bg = bg.clone();
         let appmsg = appmsg.clone();
         move |_| {
-            println!("Open button pressed");
-
             let Some(path) = get_file(dialog::FileDialogType::BrowseFile) else {
                 eprintln!("No file selected/cancelled");
                 return;
@@ -648,10 +668,30 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Ok(())
             }() {
                 Ok(()) => (),
-                Err(err) => error_alert(&appmsg, format!("Openbtn fail: {err}")),
+                Err(err) => error_alert(&appmsg, format!("Open button failed: {err}")),
             }
         }
     });
+
+    savebtn.set_callback({
+        let bg = bg.clone();
+        let appmsg = appmsg.clone();
+        move |_| {
+            let Some(path) = get_file(dialog::FileDialogType::BrowseSaveFile) else {
+                eprintln!("No file selected/cancelled");
+                return;
+            };
+
+            match || -> Result<(), Box<dyn Error>> {
+                bg.send(BgMessage::SaveImage(path))?;
+                Ok(())
+            }() {
+                Ok(()) => (),
+                Err(err) => error_alert(&appmsg, format!("Save button failed: {err}")),
+            }
+        }
+    });
+
 
     clearbtn.set_callback({
         let bg = bg.clone();
