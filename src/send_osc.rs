@@ -94,7 +94,12 @@ pub struct SendOSCOpts {
     linesync: bool,
 }
 
-pub fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Vec::<quantizr::Color>, msgs_per_second: f64) -> Result<(), Box<dyn Error>> {
+pub fn send_osc(
+    appmsg: &mpsc::Sender<AppMessage>,
+    indexes: &Vec::<u8>,
+    palette: &Vec::<quantizr::Color>,
+    msgs_per_second: f64
+) -> Result<(), Box<dyn Error>> {
     extern crate rosc;
 
     use rosc::encoder;
