@@ -107,6 +107,127 @@ pub enum ResizeType {
     ToFit,
 }
 
+// Home-cooked bilinear scaling
+fn scale_image_bilinear(src: &[u8],
+                        width: u32, height: u32,
+                        nwidth: u32, nheight: u32,
+                        resize: ResizeType
+) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
+    // use std::mem::MaybeUninit;
+    // use alloc::alloc::{alloc, Layout};
+    type F = f64;
+
+    let width = width as usize;
+    let height = height as usize;
+    let nwidth = nwidth as usize;
+    let nheight = nheight as usize;
+    println!("{}: width={width}, height={height}, nwidth={nwidth}, nheight={nheight}", function!());
+
+    assert!(src.len() == width * height * 4); // RGBA format assumed
+
+    let (nwidth, nheight): (usize, usize) = match resize {
+        ResizeType::ToFill => (nwidth, nheight), // TODO: In this case we need to change width and height as well unless we squish...
+        ResizeType::ToFit => {
+            if width > height {
+                // Wider than tall
+                let aspect_ratio: F = (width as F)/(height as F);
+                (nwidth, ((nheight as F)/aspect_ratio) as usize)
+            } else {
+                // Taller than wide (or square)
+                let aspect_ratio: F = (height as F)/(width as F);
+                (((nwidth as F)/aspect_ratio) as usize, nheight)
+            }
+        },
+    };
+
+    println!("{}: width={width}, height={height}, nwidth={nwidth}, nheight={nheight}", function!());
+
+    // // Safety:
+    // // We fill every single byte of the resulting buffer
+    // unsafe {
+    //     let size: usize = (width * height * 4) as usize;
+
+    //     // It will be nice when Box::new_uninit_slice starts existing
+    //     let mut buffer: Box<[MaybeUninit<u8>]> = Box::from_raw(
+    //         alloc(Layout::from_size_align(size, 16)?)
+    //             as *mut [MaybeUninit<u8>; size]
+    //     );
+    // }
+
+    let x_scale: F = (width as F)/(nwidth as F);
+    let y_scale: F = (height as F)/(nheight as F);
+
+    let mut buffer: Vec<u8> = vec![0u8; nwidth * nheight * 4];
+    // TODO: Parallelize usign rayon
+    for (i, pixel) in buffer.chunks_exact_mut(4).enumerate() {
+        type Px = [u8; 4];
+        type FPx = [F; 4];
+
+        let (idst_x, idst_y) = (i % nwidth, i / nwidth);
+        let (dst_x, dst_y) = (idst_x as F, idst_y as F);
+        let (src_x, src_y) = (dst_x*x_scale, dst_y*y_scale);
+
+        let src_ul = (src_x.floor(), src_y.floor());
+        let src_ur = (src_x.ceil(),  src_y.floor());
+        let src_dl = (src_x.floor(), src_y.ceil());
+        let src_dr = (src_x.ceil(),  src_y.ceil());
+        let isrc_ul = ((src_ul.0 as usize)%width, (src_ul.1 as usize)%height); // Wrap out of bounds
+        let isrc_ur = ((src_ur.0 as usize)%width, (src_ur.1 as usize)%height);
+        let isrc_dl = ((src_dl.0 as usize)%width, (src_dl.1 as usize)%height);
+        let isrc_dr = ((src_dr.0 as usize)%width, (src_dr.1 as usize)%height);
+
+        let idx_src_ul = (isrc_ul.0 + width*isrc_ul.1)*4;
+        let idx_src_ur = (isrc_ur.0 + width*isrc_ur.1)*4;
+        let idx_src_dl = (isrc_dl.0 + width*isrc_dl.1)*4;
+        let idx_src_dr = (isrc_dr.0 + width*isrc_dr.1)*4;
+
+        // Get the right byte slices out
+        let iul: Px = src[idx_src_ul..idx_src_ul+4].try_into().expect("ul: Slices should be 4 long by definition");
+        let iur: Px = src[idx_src_ur..idx_src_ur+4].try_into().expect("ur: Slices should be 4 long by definition");
+        let idl: Px = src[idx_src_dl..idx_src_dl+4].try_into().expect("dl: Slices should be 4 long by definition");
+        let idr: Px = src[idx_src_dr..idx_src_dr+4].try_into().expect("dr: Slices should be 4 long by definition");
+        let ul: FPx = iul.map(|x| x as F);
+        let ur: FPx = iur.map(|x| x as F);
+        let dl: FPx = idl.map(|x| x as F);
+        let dr: FPx = idr.map(|x| x as F);
+
+        // interpolate along x
+        let diff_x: F = src_ur.0 - src_x;
+        debug_assert!(diff_x >= 0.0 && diff_x <= 1.0, "diff_x={diff_x} not between 0.0 and 1.0");
+        // FIXME: Would be really cool to zip(ul, ur).map(|(a,b)| a*diff_x + b*(1.0 - diff_x)) here, but that won't work without heap allocation I think...
+        //        Unless somehow const generics
+        let interp_u: FPx = [
+            ul[0]*diff_x + ur[0]*(1.0 - diff_x),
+            ul[1]*diff_x + ur[1]*(1.0 - diff_x),
+            ul[2]*diff_x + ur[2]*(1.0 - diff_x),
+            ul[3]*diff_x + ur[3]*(1.0 - diff_x),
+        ];
+        let interp_d: FPx = [
+            dl[0]*diff_x + dr[0]*(1.0 - diff_x),
+            dl[1]*diff_x + dr[1]*(1.0 - diff_x),
+            dl[2]*diff_x + dr[2]*(1.0 - diff_x),
+            dl[3]*diff_x + dr[3]*(1.0 - diff_x),
+        ];
+
+        // interpolate along y
+        let diff_y: F = src_dr.1 - src_y;
+        debug_assert!(diff_y >= 0.0 && diff_y <= 1.0, "diff_y={diff_y} not between 0.0 and 1.0");
+
+        let result: FPx = [
+            interp_u[0]*diff_y + interp_d[0]*(1.0 - diff_y),
+            interp_u[1]*diff_y + interp_d[1]*(1.0 - diff_y),
+            interp_u[2]*diff_y + interp_d[2]*(1.0 - diff_y),
+            interp_u[3]*diff_y + interp_d[3]*(1.0 - diff_y),
+        ];
+
+        let result: Px = result.map(|x| x as u8);
+        pixel.copy_from_slice(&result);
+    }
+
+    Ok((buffer, nwidth.try_into()?, nheight.try_into()?))
+}
+
+// Image scaling using scaling from the image crate
 fn scale_image(bytes: Vec<u8>,
                width: u32, height: u32,
                nwidth: u32, nheight: u32,
@@ -498,7 +619,10 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                             (bytes, width, height) = rgbaimage_to_bytes(&image, grayscale);
 
                             if scaling {
-                                (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type)
+                                // (bytes, width, height) = scale_image(bytes, width, height, scale, scale, resize_type)
+                                //     .map_err(|err| format!("scale_image failed: {err:?}"))?;
+
+                                (bytes, width, height) = scale_image_bilinear(&bytes, width, height, scale, scale, resize_type)
                                     .map_err(|err| format!("scale_image failed: {err:?}"))?;
                             }
 
@@ -728,7 +852,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut scaling_toggle = CheckButton::default().with_label("Enable scaling").with_id("scaling_toggle");
     scaling_toggle.set_checked(true);
     const SCALE_DEFAULT: &'static str = "128";
-    let mut scale_input = IntInput::default().with_size(0, 40).with_label("Scale (NxN)").with_id("scale_input");
+    let mut scale_input = IntInput::default().with_size(0, 40).with_label("Scale (NxN)").with_id("scale_input").with_align(Align::Inside);
     // scale_input.set_trigger(CallbackTrigger::Changed);
     scale_input.set_trigger(CallbackTrigger::EnterKey);
     scale_input.set_value(SCALE_DEFAULT);
