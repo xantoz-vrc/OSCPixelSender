@@ -29,20 +29,6 @@ fn print_type_of<T>(_: &T) {
     println!("{}", std::any::type_name::<T>());
 }
 
-#[derive(Debug, Clone)]
-pub enum Color {
-    Grayscale,
-    Indexed,
-}
-
-#[derive(Debug, Clone)]
-pub enum PixFmt {
-    Bpp1(Color),
-    Bpp4(Color),
-    Bpp5(Color),
-    Bpp8(Color),
-}
-
 pub enum AppMessage {
     SetTitle(String),
     Alert(String),
@@ -71,7 +57,7 @@ pub enum BgMessage{
     ClearImage,
     SendOSC{
         speed: f64,
-        pixfmt: PixFmt,
+        pixfmt: send_osc::PixFmt,
     },
     Quit,
 }
@@ -252,176 +238,195 @@ fn print_err<T, E: Error>(result: Result<T, E>) -> () {
     }
 }
 
-fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Vec::<quantizr::Color>, msgs_per_second: f64) -> Result<(), Box<dyn Error>> {
-    extern crate rosc;
 
-    use rosc::encoder;
-    use rosc::{OscMessage, OscPacket, OscType};
-    use std::net::{SocketAddrV4, UdpSocket};
-    use std::str::FromStr;
-    use std::time::Duration;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
+mod send_osc {
+    use super::*;
 
-    let host_addr = SocketAddrV4::from_str("127.0.0.1:9002")?;
-    let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
-    let sock = UdpSocket::bind(host_addr)?;
+    #[derive(Debug, Clone)]
+    pub enum Color {
+        Grayscale,
+        Indexed,
+    }
 
-    let sleep_time = 1.0/msgs_per_second;
+    #[derive(Debug, Clone)]
+    pub enum PixFmt {
+        Bpp1(Color),
+        Bpp4(Color),
+        Bpp5(Color),
+        Bpp8(Color),
+    }
 
-    const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
+    pub fn send_osc(appmsg: &mpsc::Sender<AppMessage>, indexes: &Vec::<u8>, palette: &Vec::<quantizr::Color>, msgs_per_second: f64) -> Result<(), Box<dyn Error>> {
+        extern crate rosc;
 
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    let (tx, rx) = mpsc::channel::<(Window, fltk::misc::Progress)>();
+        use rosc::encoder;
+        use rosc::{OscMessage, OscPacket, OscType};
+        use std::net::{SocketAddrV4, UdpSocket};
+        use std::str::FromStr;
+        use std::time::Duration;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
 
-    // New windows need to be created on the main thread, so we message the main thread
-    appmsg.send({
-        let cancel_flag = Arc::clone(&cancel_flag);
-        AppMessage::CreateWindow(
-            400, 200, "Sending OSC".to_string(),
-            Box::new(move |win| -> Result<(), Box<dyn Error>> {
-                let col = Flex::default_fill().column();
+        let host_addr = SocketAddrV4::from_str("127.0.0.1:9002")?;
+        let to_addr = SocketAddrV4::from_str("127.0.0.1:9000")?;
+        let sock = UdpSocket::bind(host_addr)?;
 
-                let mut progressbar = fltk::misc::Progress::default_fill();
-                progressbar.set_minimum(0.0);
-                progressbar.set_maximum(100.0);
-                progressbar.set_value(0.0);
+        let sleep_time = 1.0/msgs_per_second;
 
-                win.set_callback({
-                    let cancel_flag = Arc::clone(&cancel_flag);
-                    move |_win| {
-                        if app::event() == Event::Close {
-                            println!("Send OSC window got Event::close");
+        const OSC_PREFIX: &'static str = "/avatar/parameters/PixelSendCRT";
+
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel::<(Window, fltk::misc::Progress)>();
+
+        // New windows need to be created on the main thread, so we message the main thread
+        appmsg.send({
+            let cancel_flag = Arc::clone(&cancel_flag);
+            AppMessage::CreateWindow(
+                400, 200, "Sending OSC".to_string(),
+                Box::new(move |win| -> Result<(), Box<dyn Error>> {
+                    let col = Flex::default_fill().column();
+
+                    let mut progressbar = fltk::misc::Progress::default_fill();
+                    progressbar.set_minimum(0.0);
+                    progressbar.set_maximum(100.0);
+                    progressbar.set_value(0.0);
+
+                    win.set_callback({
+                        let cancel_flag = Arc::clone(&cancel_flag);
+                        move |_win| {
+                            if app::event() == Event::Close {
+                                println!("Send OSC window got Event::close");
+                                cancel_flag.store(true, Ordering::Relaxed);
+                            }
+                        }
+                    });
+
+                    let mut cancel_btn = Button::default().with_label("Cancel");
+                    cancel_btn.set_callback({
+                        let cancel_flag = Arc::clone(&cancel_flag);
+                        move |_btn| {
+                            println!("Send OSC window cancel button pressed");
                             cancel_flag.store(true, Ordering::Relaxed);
                         }
-                    }
-                });
+                    });
 
-                let mut cancel_btn = Button::default().with_label("Cancel");
-                cancel_btn.set_callback({
-                    let cancel_flag = Arc::clone(&cancel_flag);
-                    move |_btn| {
-                        println!("Send OSC window cancel button pressed");
-                        cancel_flag.store(true, Ordering::Relaxed);
-                    }
-                });
+                    col.end();
 
-                col.end();
+                    tx.send((win.clone(), progressbar))?;
 
-                tx.send((win.clone(), progressbar))?;
+                    Ok(())
+                })
+            )
+        })?;
+        fltk::app::awake();
 
-                Ok(())
-            })
-        )
-    })?;
-    fltk::app::awake();
+        let (win, mut progressbar) = rx.recv()?;
 
-    let (win, mut progressbar) = rx.recv()?;
+        let appmsg = appmsg.clone();
+        let indexes = indexes.clone();
+        let palette = palette.clone();
 
-    let appmsg = appmsg.clone();
-    let indexes = indexes.clone();
-    let palette = palette.clone();
+        thread::spawn(move || -> () {
 
-    thread::spawn(move || -> () {
+            println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
 
-        println!("palette.len(): {}, indexes.len(): {}", palette.len(), indexes.len());
-
-        match || -> Result<(), Box<dyn Error>> {
-            let duration = Duration::from_secs_f64(sleep_time);
-
-            msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
-                args: vec![OscType::Bool(false)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
-            let mut msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/Reset"),
-                args: vec![OscType::Bool(true)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
-            thread::sleep(duration);
-
-            msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/CLK"),
-                args: vec![OscType::Bool(false)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
-            msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                addr: format!("{OSC_PREFIX}/Reset"),
-                args: vec![OscType::Bool(false)],
-            }))?;
-            sock.send_to(&msg_buf, to_addr)?;
-
-            thread::sleep(duration);
-
-            let now = std::time::Instant::now();
-
-            let mut clk: bool = false;
-            let chunks = indexes.chunks_exact(16);
-            let mut count: usize = 0;
-            let countmax: usize = chunks.len();
-            let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
-            for index16 in chunks {
-                if cancel_flag.load(Ordering::Relaxed) {
-                    println!("{}", "Send OSC thread cancelled");
-                    break;
-                }
-
-                dbg!(&index16);
-
-                let mut n: u32 = 0;
-                for index in index16 {
-                    let valuename = format!("V{:X}", n);
-                    n += 1;
-                    let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-                        addr: format!("{OSC_PREFIX}/{valuename}"),
-                        args: vec![OscType::Int(*index as i32)],
-                    }))?;
-                    sock.send_to(&msg_buf, to_addr)?;
-                }
+            match || -> Result<(), Box<dyn Error>> {
+                let duration = Duration::from_secs_f64(sleep_time);
 
                 let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
                     addr: format!("{OSC_PREFIX}/CLK"),
-                    args: vec![OscType::Bool(clk)],
+                    args: vec![OscType::Bool(false)],
                 }))?;
                 sock.send_to(&msg_buf, to_addr)?;
 
-                clk = !clk;
-                count += 1;
-
-                let progress = ((count as f64)/(countmax as f64))*100.0;
-                let elapsed = now.elapsed();
-                let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count, countmax, progress, elapsed, eta);
-                println!("{}", msg);
-                progressbar.set_label(&msg);
-                progressbar.set_value(progress);
-
-                fltk::app::awake();
+                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: format!("{OSC_PREFIX}/Reset"),
+                    args: vec![OscType::Bool(true)],
+                }))?;
+                sock.send_to(&msg_buf, to_addr)?;
 
                 thread::sleep(duration);
-            }
-            println!("Send OSC thread finished sending all");
 
-            appmsg.send(AppMessage::DeleteWindow(win))?;
-            fltk::app::awake();
+                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: format!("{OSC_PREFIX}/CLK"),
+                    args: vec![OscType::Bool(false)],
+                }))?;
+                sock.send_to(&msg_buf, to_addr)?;
 
-            Ok(())
-        }() {
-            Ok(()) => (),
-            Err(err) => {
-                let msg = format!("send_osc background process failed: {err}");
-                eprintln!("{}", msg);
-                print_err(appmsg.send(AppMessage::Alert(msg)));
+                let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                    addr: format!("{OSC_PREFIX}/Reset"),
+                    args: vec![OscType::Bool(false)],
+                }))?;
+                sock.send_to(&msg_buf, to_addr)?;
+
+                thread::sleep(duration);
+
+                let now = std::time::Instant::now();
+
+                let mut clk: bool = false;
+                let chunks = indexes.chunks_exact(16);
+                let mut count: usize = 0;
+                let countmax: usize = chunks.len();
+                let eta = Duration::from_secs_f64((countmax as f64) * sleep_time);
+                for index16 in chunks {
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        println!("{}", "Send OSC thread cancelled");
+                        break;
+                    }
+
+                    dbg!(&index16);
+
+                    let mut n: u32 = 0;
+                    for index in index16 {
+                        let valuename = format!("V{:X}", n);
+                        n += 1;
+                        let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                            addr: format!("{OSC_PREFIX}/{valuename}"),
+                            args: vec![OscType::Int(*index as i32)],
+                        }))?;
+                        sock.send_to(&msg_buf, to_addr)?;
+                    }
+
+                    let msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
+                        addr: format!("{OSC_PREFIX}/CLK"),
+                        args: vec![OscType::Bool(clk)],
+                    }))?;
+                    sock.send_to(&msg_buf, to_addr)?;
+
+                    clk = !clk;
+                    count += 1;
+
+                    let progress = ((count as f64)/(countmax as f64))*100.0;
+                    let elapsed = now.elapsed();
+                    let msg = format!("Sent pixel chunk {}/{} {:.1}%\t ETA: {:.2?}/{:.2?}", count, countmax, progress, elapsed, eta);
+                    println!("{}", msg);
+                    progressbar.set_label(&msg);
+                    progressbar.set_value(progress);
+
+                    fltk::app::awake();
+
+                    thread::sleep(duration);
+                }
+                println!("Send OSC thread finished sending all");
+
+                appmsg.send(AppMessage::DeleteWindow(win))?;
                 fltk::app::awake();
-            },
-        };
-    });
+
+                Ok(())
+            }() {
+                Ok(()) => (),
+                Err(err) => {
+                    let msg = format!("send_osc background process failed: {err}");
+                    eprintln!("{}", msg);
+                    print_err(appmsg.send(AppMessage::Alert(msg)));
+                    fltk::app::awake();
+                },
+            };
+        });
 
 
-    Ok(())
+        Ok(())
+    }
 }
 
 fn enable_send_osc_button(active: bool) -> Result<(), String> {
@@ -635,7 +640,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread
                     match || -> Result<(), String> {
                         let (indexes, palette) = indexes_and_palette.as_ref()
                             .ok_or("Indexes and palette not generated yet")?;
-                        send_osc(&appmsg, indexes, palette, speed)
+                        send_osc::send_osc(&appmsg, indexes, palette, speed)
                             .map_err(|err| format!("send_osc failed: {err}"))?;
                         Ok(())
                     }() {
@@ -875,7 +880,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let result = bg.send(
                 BgMessage::SendOSC{
                     speed: speed,
-                    pixfmt: PixFmt::Bpp8(Color::Grayscale),
+                    pixfmt: send_osc::PixFmt::Bpp8(send_osc::Color::Grayscale),
                 }
             );
             if result.is_err() {
