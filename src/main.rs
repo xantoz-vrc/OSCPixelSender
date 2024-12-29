@@ -72,8 +72,8 @@ impl BgMessage {
     }
 }
 
-fn get_file() -> Option<PathBuf> {
-    let mut nfc = dialog::NativeFileChooser::new(dialog::FileDialogType::BrowseFile);
+fn get_file(dialogtype: dialog::FileDialogType) -> Option<PathBuf> {
+    let mut nfc = dialog::NativeFileChooser::new(dialogtype);
 
     match nfc.try_show() {
         Err(err) => {
@@ -942,7 +942,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |_| {
             println!("Open button pressed");
 
-            let Some(path) = get_file() else {
+            let Some(path) = get_file(dialog::FileDialogType::BrowseFile) else {
                 eprintln!("No file selected/cancelled");
                 return;
             };
