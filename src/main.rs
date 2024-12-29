@@ -1,3 +1,5 @@
+pub mod mq;
+
 use fltk::{app, frame::Frame, enums::CallbackTrigger, enums::FrameType, image::*, enums::ColorDepth, prelude::*, window::Window, group::*, button::*, valuator::*, dialog, input::*, menu};
 use std::error::Error;
 use std::path::PathBuf;
@@ -48,6 +50,16 @@ pub enum BgMessage{
         multiplier: u8,
     },
     ClearImage,
+    Quit,
+}
+
+impl BgMessage {
+    fn is_update(&self) -> bool {
+        match self {
+            BgMessage::UpdateImage{..} => true,
+            _ => false
+        }
+    }
 }
 
 fn get_file() -> Option<PathBuf> {
@@ -217,30 +229,29 @@ fn print_err<T, E: Error>(result: Result<T, E>) -> () {
     }
 }
 
-fn ignore_full<T: std::fmt::Debug>(result: Result<(), mpsc::TrySendError<T>>) -> Result<(), mpsc::TrySendError<T>> {
-    match result {
-        Ok(()) => Ok(()),
-        Err(mpsc::TrySendError::Full(t)) => {
-            eprintln!("Channel full. Couldn't send: {:?}", t);
-            Ok(())
-        },
-        Err(err) => Err(err),
-    }
-}
-
-fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::SyncSender<BgMessage> {
-    let (sender, receiver) = mpsc::sync_channel::<BgMessage>(1);
-// fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::Sender<BgMessage> {
-//     let (sender, receiver) = mpsc::channel::<BgMessage>();
+fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> (thread::JoinHandle<()>, mq::MessageQueueSender<BgMessage>) {
+    let (sender, receiver) = mq::mq::<BgMessage>();
 
     let appmsg = appmsg_sender.clone();
     let sender_return = sender.clone();
 
-    thread::spawn(move || {
+    let joinhandle: thread::JoinHandle<()> = thread::spawn(move || -> () {
         let mut imagepath: Option<PathBuf> = None;
+        let mut run: bool = true;
 
-        for msg in receiver {
+        while run {
+            let recvres = receiver.recv();
+            let Ok(msg) = recvres else {
+                let s = format!("Error receiving from mq::MessageQueueReceiver: {}", recvres.unwrap_err());
+                eprintln!("{}", s);
+                print_err(appmsg.send(AppMessage::Alert(s)));
+                continue;
+            };
+
             match msg {
+                BgMessage::Quit => {
+                    run = false;
+                },
                 BgMessage::LoadImage(path) => {
                     imagepath = Some(path);
                 },
@@ -271,7 +282,7 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::S
                             eprintln!("{}", msg);
                             print_err(appmsg.send(AppMessage::Alert(msg)));
                         }
-                    }
+                    };
                 },
                 BgMessage::UpdateImage{
                     no_quantize,
@@ -359,13 +370,13 @@ fn start_background_process(appmsg_sender: &mpsc::Sender<AppMessage>) -> mpsc::S
                             print_err(appmsg.send(AppMessage::Alert(msg)));
                             print_err(sender.send(BgMessage::ClearImage));
                         },
-                    }
+                    };
                 },
-            }
+            };
         }
     });
 
-    sender_return
+    (joinhandle, sender_return)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -434,9 +445,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     col.fixed(&multiplier_menubutton, 30);
 
     let (appmsg, appmsg_recv) = mpsc::channel::<AppMessage>();
-    let bg = start_background_process(&appmsg);
+    let (joinhandle, bg) = start_background_process(&appmsg);
 
-    fn updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mpsc::SyncSender<BgMessage>) -> () {
+    fn updateimage(appmsg: &mpsc::Sender<AppMessage>, bg: &mq::MessageQueueSender::<BgMessage>) -> () {
         match || -> Result<(), String> {
             let no_quantize_toggle: CheckButton = app::widget_from_id("no_quantize_toggle").ok_or("widget_from_id fail")?;
             let grayscale_toggle: CheckButton = app::widget_from_id("grayscale_toggle").ok_or("widget_from_id fail")?;
@@ -479,7 +490,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 },
             };
-            ignore_full(bg.try_send(msg)).map_err(|err| format!("Send error: {err}"))?;
+            bg.send_or_replace_if(BgMessage::is_update, msg)
+                .map_err(|err| format!("Send error: {err}"))?;
             Ok(())
         }() {
             Ok(()) => (),
@@ -503,12 +515,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
             match || -> Result<(), Box<dyn Error>> {
-                ignore_full(bg.try_send(BgMessage::LoadImage(path)))?;
+                bg.send(BgMessage::LoadImage(path))?;
                 Ok(())
             }() {
                 Ok(()) => (),
                 Err(err) => {
-                    let msg = format!("Openbtn fail: {:?}", err);
+                    let msg = format!("Openbtn fail: {}", err);
                     eprintln!("{}", msg);
                     print_err(appmsg.send(AppMessage::Alert(msg)));
                 }
@@ -524,9 +536,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         move |_| {
             println!("Clear button pressed");
 
-            let sendresult = ignore_full(bg.try_send(BgMessage::ClearImage));
+            let sendresult = bg.send(BgMessage::ClearImage);
             if sendresult.is_err() {
-                let msg = format!("{:?}", sendresult);
+                let msg = format!("{}", sendresult.unwrap_err());
                 eprintln!("{}", msg);
                 print_err(appmsg.send(AppMessage::Alert(msg)));
             }
@@ -593,5 +605,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("App finished");
+
+    bg.send(BgMessage::Quit)?;
+    joinhandle.join().map_err(|err| format!("Joining failed: {err:?}"))?;
+
     Ok(())
 }
