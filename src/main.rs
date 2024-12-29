@@ -228,6 +228,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     fn try_send(msg: Message) -> Result<(), String> {
         SEND.get().ok_or("SEND not set")?
             .send(msg).map_err(|err| format!("Send error {err:?}"))?;
+        fltk::app::awake();
         Ok(())
     }
 
